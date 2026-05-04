@@ -24,6 +24,15 @@ export class DkgApiError extends Error {
   }
 }
 
+/** RDF quad in N-Quads-compatible JSON format — the format the DKG v10 daemon accepts. */
+export interface RdfQuad {
+  subject: string;
+  predicate: string;
+  /** URI (no quotes) or N-Quads literal e.g. `"some string"` */
+  object: string;
+  graph?: string;
+}
+
 interface DkgWmClientOptions {
   daemonUrl: string;
   token: string;
@@ -31,7 +40,14 @@ interface DkgWmClientOptions {
   logger?: OpenClawLogger;
 }
 
+interface CreateAssertionReceipt {
+  assertionUri?: string;
+  ual?: string;
+  alreadyExists?: boolean;
+}
+
 interface WriteReceipt {
+  written?: number;
   ual?: string;
 }
 
@@ -101,84 +117,138 @@ export class DkgWmClient {
     }
   }
 
-  async contextGraphExists(name: string): Promise<boolean> {
+  // ---------------------------------------------------------------------------
+  // Context Graph
+  // ---------------------------------------------------------------------------
+
+  async createContextGraph(id: string, name: string, description?: string): Promise<void> {
+    await this.request<unknown>('POST', '/api/context-graph/create', { id, name, description });
+    this.logger?.info(`[dkg-wm] Context Graph '${id}' created`);
+  }
+
+  /**
+   * Create context graph, swallowing "already exists" 400 errors so calls are idempotent.
+   */
+  async ensureContextGraph(id: string, name?: string): Promise<void> {
     try {
-      await this.request<unknown>('GET', `/api/context-graph/exists?name=${encodeURIComponent(name)}`);
-      return true;
+      await this.createContextGraph(id, name ?? id);
     } catch (err: unknown) {
-      if (err instanceof DkgApiError && err.statusCode === 404) return false;
+      if (err instanceof DkgApiError && (err.statusCode === 400 || err.statusCode === 409)) {
+        const msg = err.message.toLowerCase();
+        if (msg.includes('already exists') || msg.includes('already registered')) return;
+      }
       throw err;
     }
   }
 
-  async createContextGraph(name: string): Promise<void> {
-    await this.request<unknown>('POST', '/api/context-graph/create', { name });
-    this.logger?.info(`[dkg-wm] Context Graph '${name}' created`);
-  }
+  // ---------------------------------------------------------------------------
+  // Assertion lifecycle
+  // ---------------------------------------------------------------------------
 
-  async ensureContextGraph(name: string): Promise<void> {
-    const exists = await this.contextGraphExists(name);
-    if (!exists) {
-      await this.createContextGraph(name);
-    }
-  }
-
-  async createAssertion(params: {
-    contextGraph: string;
-    name: string;
-    content: unknown;
-  }): Promise<WriteReceipt> {
-    const receipt = await this.request<WriteReceipt>('POST', '/api/assertion/create', {
-      contextGraph: params.contextGraph,
-      name: params.name,
-      content: params.content,
-    });
-    this.logger?.info(`[dkg-wm] Assertion '${params.name}' created — UAL: ${receipt.ual ?? 'none'}`);
-    return receipt;
-  }
-
-  async writeAssertion(name: string, content: unknown): Promise<WriteReceipt> {
-    const receipt = await this.request<WriteReceipt>('POST', `/api/assertion/${encodeURIComponent(name)}/write`, {
-      content,
-    });
-    this.logger?.info(`[dkg-wm] Artifact written to '${name}' — UAL: ${receipt.ual ?? 'none'}`);
-    return receipt;
-  }
-
-  async createOrWriteAssertion(params: {
-    contextGraph: string;
-    name: string;
-    content: unknown;
-    assertionExists: boolean;
-  }): Promise<WriteReceipt> {
-    if (!params.assertionExists) {
-      return this.createAssertion({
-        contextGraph: params.contextGraph,
-        name: params.name,
-        content: params.content,
+  /**
+   * Create an empty assertion inside a context graph.
+   * Returns the assertion URI. If the assertion already exists, returns { alreadyExists: true }.
+   */
+  async createAssertion(contextGraphId: string, name: string): Promise<CreateAssertionReceipt> {
+    try {
+      const receipt = await this.request<CreateAssertionReceipt>('POST', '/api/assertion/create', {
+        contextGraphId,
+        name,
       });
+      this.logger?.info(`[dkg-wm] Assertion '${name}' created — URI: ${receipt.assertionUri ?? 'none'}`);
+      return receipt;
+    } catch (err: unknown) {
+      if (err instanceof DkgApiError && err.statusCode === 400) {
+        const msg = err.message.toLowerCase();
+        if (msg.includes('already exists')) {
+          return { alreadyExists: true };
+        }
+      }
+      throw err;
     }
-    return this.writeAssertion(params.name, params.content);
   }
 
-  async queryAssertion(name: string, sparql: string): Promise<unknown> {
-    return this.request<unknown>('POST', `/api/assertion/${encodeURIComponent(name)}/query`, {
-      query: sparql,
+  /**
+   * Write RDF quads into an existing assertion.
+   * Quads must be in the format: { subject: URI, predicate: URI, object: URI or "literal" }
+   */
+  async writeAssertion(contextGraphId: string, name: string, quads: RdfQuad[]): Promise<WriteReceipt> {
+    const receipt = await this.request<WriteReceipt>('POST', `/api/assertion/${encodeURIComponent(name)}/write`, {
+      contextGraphId,
+      quads,
+    });
+    this.logger?.info(`[dkg-wm] Wrote ${quads.length} quads to '${name}'`);
+    return receipt;
+  }
+
+  /**
+   * Create assertion + write quads in one call.
+   * If assertionExists=true, skips the create step.
+   */
+  async createOrWriteAssertion(params: {
+    contextGraphId: string;
+    name: string;
+    quads: RdfQuad[];
+    assertionExists: boolean;
+  }): Promise<{ ual?: string; alreadyExists?: boolean }> {
+    if (!params.assertionExists) {
+      const receipt = await this.createAssertion(params.contextGraphId, params.name);
+      if (!receipt.alreadyExists) {
+        await this.writeAssertion(params.contextGraphId, params.name, params.quads);
+        return { ual: receipt.assertionUri };
+      }
+    }
+    await this.writeAssertion(params.contextGraphId, params.name, params.quads);
+    return {};
+  }
+
+  /**
+   * Dump all quads from an assertion graph.
+   */
+  async queryAssertion(contextGraphId: string, name: string): Promise<{ quads: RdfQuad[]; count: number }> {
+    return this.request('POST', `/api/assertion/${encodeURIComponent(name)}/query`, {
+      contextGraphId,
     });
   }
 
-  async getAssertionHistory(name: string): Promise<unknown> {
-    return this.request<unknown>('GET', `/api/assertion/${encodeURIComponent(name)}/history`);
+  async getAssertionHistory(contextGraphId: string, name: string): Promise<unknown> {
+    const params = new URLSearchParams({ contextGraphId });
+    return this.request<unknown>('GET', `/api/assertion/${encodeURIComponent(name)}/history?${params.toString()}`);
   }
 
-  async promoteAssertion(name: string): Promise<void> {
-    await this.request<unknown>('POST', `/api/assertion/${encodeURIComponent(name)}/promote`);
+  async promoteAssertion(contextGraphId: string, name: string): Promise<void> {
+    await this.request<unknown>('POST', `/api/assertion/${encodeURIComponent(name)}/promote`, {
+      contextGraphId,
+    });
     this.logger?.info(`[dkg-wm] Assertion '${name}' promoted to Shared Working Memory`);
   }
 
-  async querySparql(sparql: string): Promise<unknown> {
-    return this.request<unknown>('POST', '/api/query', { query: sparql });
+  // ---------------------------------------------------------------------------
+  // SPARQL
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Run a SPARQL SELECT query scoped to working-memory of a context graph.
+   */
+  async querySparql(
+    sparql: string,
+    opts?: {
+      contextGraphId?: string;
+      view?: 'working-memory' | 'shared-working-memory' | 'verified-memory';
+      assertionName?: string;
+    },
+  ): Promise<unknown> {
+    return this.request<unknown>('POST', '/api/query', {
+      sparql,
+      view: opts?.view ?? 'working-memory',
+      contextGraphId: opts?.contextGraphId,
+      assertionName: opts?.assertionName,
+    });
   }
+
+  // ---------------------------------------------------------------------------
+  // Health
+  // ---------------------------------------------------------------------------
 
   async getStatus(): Promise<unknown> {
     return this.request<unknown>('GET', '/api/status');

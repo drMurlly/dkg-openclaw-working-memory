@@ -31,54 +31,35 @@ afterEach(() => {
 });
 
 describe('dkg-wm-client', () => {
-  describe('contextGraphExists', () => {
-    it('returns true on 200', async () => {
-      vi.stubGlobal('fetch', mockFetch([{ ok: true, status: 200, body: { exists: true } }]));
-      const client = makeClient();
-      expect(await client.contextGraphExists('wm-artifacts')).toBe(true);
-    });
-
-    it('returns false on 404', async () => {
-      vi.stubGlobal('fetch', mockFetch([{ ok: false, status: 404 }]));
-      const client = makeClient();
-      expect(await client.contextGraphExists('wm-artifacts')).toBe(false);
-    });
-  });
-
   describe('ensureContextGraph', () => {
-    it('creates CG when it does not exist', async () => {
+    it('creates CG via single idempotent POST', async () => {
       vi.stubGlobal('fetch', mockFetch([
-        { ok: false, status: 404 },
         { ok: true, status: 200, body: {} },
       ]));
       const client = makeClient();
       await client.ensureContextGraph('wm-artifacts');
-      expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
+      expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
     });
 
-    it('skips create when CG already exists', async () => {
+    it('swallows 409 "already exists" error', async () => {
       vi.stubGlobal('fetch', mockFetch([
-        { ok: true, status: 200, body: { exists: true } },
+        { ok: false, status: 409, body: { error: 'context graph already exists' } },
       ]));
       const client = makeClient();
-      await client.ensureContextGraph('wm-artifacts');
+      await expect(client.ensureContextGraph('wm-artifacts')).resolves.toBeUndefined();
       expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
     });
   });
 
   describe('createAssertion', () => {
     it('calls POST /api/assertion/create with correct body', async () => {
-      const mockFn = mockFetch([{ ok: true, status: 200, body: { ual: 'ual:test:abc' } }]);
+      const mockFn = mockFetch([{ ok: true, status: 200, body: { assertionUri: 'ual:test:abc' } }]);
       vi.stubGlobal('fetch', mockFn);
       const client = makeClient();
 
-      const receipt = await client.createAssertion({
-        contextGraph: 'wm-artifacts',
-        name: 'artifacts',
-        content: { '@type': 'wm:WorkingMemoryArtifact' },
-      });
+      const receipt = await client.createAssertion('wm-artifacts', 'artifacts');
 
-      expect(receipt.ual).toBe('ual:test:abc');
+      expect(receipt.assertionUri).toBe('ual:test:abc');
       const [url, init] = mockFn.mock.calls[0] as [string, RequestInit];
       expect(url).toContain('/api/assertion/create');
       expect(init.method).toBe('POST');
@@ -87,49 +68,55 @@ describe('dkg-wm-client', () => {
 
   describe('writeAssertion', () => {
     it('calls POST /api/assertion/{name}/write', async () => {
-      const mockFn = mockFetch([{ ok: true, status: 200, body: { ual: 'ual:test:xyz' } }]);
+      const mockFn = mockFetch([{ ok: true, status: 200, body: { written: 1 } }]);
       vi.stubGlobal('fetch', mockFn);
       const client = makeClient();
 
-      const receipt = await client.writeAssertion('artifacts', { '@type': 'wm:WorkingMemoryArtifact' });
+      await client.writeAssertion('wm-artifacts', 'artifacts', [
+        { subject: 'urn:test', predicate: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type', object: 'urn:test:Type' },
+      ]);
 
-      expect(receipt.ual).toBe('ual:test:xyz');
       const [url] = mockFn.mock.calls[0] as [string, RequestInit];
       expect(url).toContain('/api/assertion/artifacts/write');
     });
   });
 
   describe('createOrWriteAssertion', () => {
-    it('uses createAssertion when assertionExists=false', async () => {
-      const mockFn = mockFetch([{ ok: true, status: 200, body: { ual: 'ual:create:abc' } }]);
+    it('calls create then write when assertionExists=false', async () => {
+      const mockFn = mockFetch([
+        { ok: true, status: 200, body: { assertionUri: 'ual:create:abc' } },
+        { ok: true, status: 200, body: { written: 1 } },
+      ]);
       vi.stubGlobal('fetch', mockFn);
       const client = makeClient();
 
       await client.createOrWriteAssertion({
-        contextGraph: 'wm-artifacts',
+        contextGraphId: 'wm-artifacts',
         name: 'artifacts',
-        content: {},
+        quads: [{ subject: 'urn:s', predicate: 'urn:p', object: '"o"' }],
         assertionExists: false,
       });
 
-      const [url] = mockFn.mock.calls[0] as [string, RequestInit];
-      expect(url).toContain('/api/assertion/create');
+      const [firstUrl] = mockFn.mock.calls[0] as [string, RequestInit];
+      expect(firstUrl).toContain('/api/assertion/create');
+      expect(mockFn.mock.calls).toHaveLength(2);
     });
 
-    it('uses writeAssertion when assertionExists=true', async () => {
-      const mockFn = mockFetch([{ ok: true, status: 200, body: { ual: 'ual:write:abc' } }]);
+    it('calls only write when assertionExists=true', async () => {
+      const mockFn = mockFetch([{ ok: true, status: 200, body: { written: 1 } }]);
       vi.stubGlobal('fetch', mockFn);
       const client = makeClient();
 
       await client.createOrWriteAssertion({
-        contextGraph: 'wm-artifacts',
+        contextGraphId: 'wm-artifacts',
         name: 'artifacts',
-        content: {},
+        quads: [{ subject: 'urn:s', predicate: 'urn:p', object: '"o"' }],
         assertionExists: true,
       });
 
       const [url] = mockFn.mock.calls[0] as [string, RequestInit];
       expect(url).toContain('/api/assertion/artifacts/write');
+      expect(mockFn.mock.calls).toHaveLength(1);
     });
   });
 

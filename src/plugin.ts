@@ -6,7 +6,7 @@ import { DkgWmClient } from './modules/dkg-wm-client.js';
 import { DedupeStore } from './modules/dedupe-store.js';
 import { loadConfig, loadToken } from './config.js';
 import { normalizeArtifact } from './modules/artifact-normalizer.js';
-import { serializeToJsonLd } from './modules/jsonld-serializer.js';
+import { serializeToQuads } from './modules/jsonld-serializer.js';
 import {
   createDepositTool,
   createPromoteTool,
@@ -55,7 +55,7 @@ export class DkgOpenClawWorkingMemoryPlugin {
     });
 
     try {
-      await this.client.ensureContextGraph(this.config.contextGraph);
+      await this.client.ensureContextGraph(this.config.contextGraph, 'WM Artifacts');
     } catch (err: unknown) {
       api.logger.error(
         `dkg-openclaw-working-memory: could not connect to DKG node — ` +
@@ -123,13 +123,13 @@ export class DkgOpenClawWorkingMemoryPlugin {
 
     if (this.config.dedupe.enabled && this.dedupe.has(artifact.contentHash)) return;
 
-    const jsonld = serializeToJsonLd(artifact);
+    const quads = serializeToQuads(artifact);
 
     try {
       const receipt = await this.client.createOrWriteAssertion({
-        contextGraph: this.config.contextGraph,
+        contextGraphId: this.config.contextGraph,
         name: this.config.assertionName,
-        content: jsonld,
+        quads,
         assertionExists: this.dedupe.isAssertionCreated(),
       });
 

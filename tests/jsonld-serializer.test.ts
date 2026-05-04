@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { serializeToJsonLd, serializeStatusUpdate } from '../src/modules/jsonld-serializer.js';
+import { serializeToJsonLd, serializeStatusUpdateQuads } from '../src/modules/jsonld-serializer.js';
 import type { ArtifactRecord } from '../src/types/artifact.js';
 
 const artifact: ArtifactRecord = {
@@ -79,10 +79,12 @@ describe('jsonld-serializer', () => {
     expect(jsonld['wm:ual']).toBe('ual:dkg:test123');
   });
 
-  it('serializeStatusUpdate produces correct structure', () => {
-    const update = serializeStatusUpdate('urn:dkg:wm:abc123', 'validated', '2026-05-04T13:00:00.000Z');
-    expect(update['@id']).toBe('urn:dkg:wm:abc123');
-    expect(update['@type']).toBe('wm:WorkingMemoryArtifact');
-    expect(update['wm:status']).toBe('validated');
+  it('serializeStatusUpdateQuads produces correct quads', () => {
+    const quads = serializeStatusUpdateQuads('urn:dkg:wm:abc123', 'validated', '2026-05-04T13:00:00.000Z');
+    expect(Array.isArray(quads)).toBe(true);
+    const statusQuad = quads.find(q => q.predicate.includes('status'));
+    expect(statusQuad).toBeDefined();
+    expect(statusQuad!.subject).toBe('urn:dkg:wm:abc123');
+    expect(statusQuad!.object).toBe('"validated"');
   });
 });

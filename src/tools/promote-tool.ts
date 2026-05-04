@@ -41,7 +41,7 @@ export function createPromoteTool(options: {
         };
       }
 
-      await client.promoteAssertion(config.assertionName);
+      await client.promoteAssertion(config.contextGraph, config.assertionName);
 
       return {
         success: true,

@@ -2,7 +2,7 @@ import type { OpenClawTool } from '../types/openclaw.js';
 import type { PluginConfig } from '../types/artifact.js';
 import { ARTIFACT_STATUSES } from '../types/artifact.js';
 import type { DkgWmClient } from '../modules/dkg-wm-client.js';
-import { serializeStatusUpdate } from '../modules/jsonld-serializer.js';
+import { serializeStatusUpdateQuads } from '../modules/jsonld-serializer.js';
 
 interface StatusUpdateArgs {
   artifactId: string;
@@ -37,9 +37,9 @@ export function createStatusUpdateTool(options: {
       const a = args as unknown as StatusUpdateArgs;
 
       const modifiedAt = new Date().toISOString();
-      const statusUpdate = serializeStatusUpdate(a.artifactId, a.newStatus, modifiedAt);
+      const quads = serializeStatusUpdateQuads(a.artifactId, a.newStatus, modifiedAt);
 
-      await client.writeAssertion(config.assertionName, statusUpdate);
+      await client.writeAssertion(config.contextGraph, config.assertionName, quads);
 
       return {
         success: true,

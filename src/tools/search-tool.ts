@@ -92,7 +92,10 @@ export function createSearchTool(options: {
       const a = args as unknown as SearchArgs;
       const sparql = buildSparqlQuery(a, config.assertionName);
 
-      const results = await client.querySparql(sparql);
+      const results = await client.querySparql(sparql, {
+        contextGraphId: config.contextGraph,
+        view: 'working-memory',
+      });
 
       return {
         success: true,

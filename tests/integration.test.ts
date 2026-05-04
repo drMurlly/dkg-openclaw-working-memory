@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { DkgWmClient } from '../src/modules/dkg-wm-client.js';
 import { DedupeStore } from '../src/modules/dedupe-store.js';
 import { normalizeArtifact } from '../src/modules/artifact-normalizer.js';
-import { serializeToJsonLd } from '../src/modules/jsonld-serializer.js';
+import { serializeToQuads } from '../src/modules/jsonld-serializer.js';
 import { createDepositTool } from '../src/tools/deposit-tool.js';
 import type { PluginConfig } from '../src/types/artifact.js';
 
@@ -58,9 +58,9 @@ function setupMockDkg(responses: Array<{ ok: boolean; status: number; body?: unk
 describe('E2E integration (mocked DKG daemon)', () => {
   it('full deposit flow: normalize → serialize → write → UAL stored', async () => {
     setupMockDkg([
-      { ok: false, status: 404 },
-      { ok: true, status: 200, body: {} },
-      { ok: true, status: 200, body: { ual: 'ual:dkg:test:abc123' } },
+      { ok: true, status: 200, body: {} },                                         // ensureContextGraph
+      { ok: true, status: 200, body: { assertionUri: 'ual:dkg:test:abc123' } },    // createAssertion
+      { ok: true, status: 200, body: { written: 20 } },                            // writeAssertion
     ]);
 
     const client = new DkgWmClient({ daemonUrl: config.daemonUrl, token: 'test-token' });
@@ -80,13 +80,13 @@ describe('E2E integration (mocked DKG daemon)', () => {
     const artifact = normalizeArtifact(raw, config)!;
     expect(artifact).not.toBeNull();
 
-    const jsonld = serializeToJsonLd(artifact);
-    expect(jsonld['@type']).toBe('wm:WorkingMemoryArtifact');
+    const quads = serializeToQuads(artifact);
+    expect(quads.some(q => q.object.includes('WorkingMemoryArtifact'))).toBe(true);
 
     const receipt = await client.createOrWriteAssertion({
-      contextGraph: config.contextGraph,
+      contextGraphId: config.contextGraph,
       name: config.assertionName,
-      content: jsonld,
+      quads,
       assertionExists: dedupe.isAssertionCreated(),
     });
 
@@ -106,9 +106,9 @@ describe('E2E integration (mocked DKG daemon)', () => {
 
   it('deposit tool: deduplicates repeated deposits', async () => {
     setupMockDkg([
-      { ok: false, status: 404 },
-      { ok: true, status: 200, body: {} },
-      { ok: true, status: 200, body: { ual: 'ual:dkg:first' } },
+      { ok: true, status: 200, body: {} },                                     // ensureContextGraph
+      { ok: true, status: 200, body: { assertionUri: 'ual:dkg:first' } },      // createAssertion
+      { ok: true, status: 200, body: { written: 5 } },                         // writeAssertion
     ]);
 
     const client = new DkgWmClient({ daemonUrl: config.daemonUrl, token: 'test-token' });

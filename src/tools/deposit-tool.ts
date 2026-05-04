@@ -4,7 +4,7 @@ import { ARTIFACT_TYPES, ARTIFACT_STATUSES } from '../types/artifact.js';
 import type { DkgWmClient } from '../modules/dkg-wm-client.js';
 import type { DedupeStore } from '../modules/dedupe-store.js';
 import { normalizeArtifact } from '../modules/artifact-normalizer.js';
-import { serializeToJsonLd } from '../modules/jsonld-serializer.js';
+import { serializeToQuads } from '../modules/jsonld-serializer.js';
 
 interface DepositArgs {
   content: string;
@@ -97,11 +97,11 @@ export function createDepositTool(options: {
         };
       }
 
-      const jsonld = serializeToJsonLd(artifact);
+      const quads = serializeToQuads(artifact);
       const receipt = await client.createOrWriteAssertion({
-        contextGraph: config.contextGraph,
+        contextGraphId: config.contextGraph,
         name: config.assertionName,
-        content: jsonld,
+        quads,
         assertionExists: dedupe.isAssertionCreated(),
       });
 
