@@ -10,6 +10,9 @@ interface SearchArgs {
   limit?: number;
 }
 
+/** Maximum characters allowed in the user-supplied query string before truncation. */
+const MAX_QUERY_LENGTH = 500;
+
 /**
  * Escape a value for safe interpolation inside a SPARQL double-quoted string literal.
  * Covers all escape sequences defined by SPARQL 1.1 §19.8.
@@ -23,8 +26,10 @@ function escapeSparqlString(value: string): string {
     .replace(/\t/g, '\\t');
 }
 
-function buildSparqlQuery(args: SearchArgs, assertionName: string): string {
-  const limit = Math.min(Math.max(1, Math.floor(args.limit ?? 10)), 100);
+function buildSparqlQuery(args: SearchArgs): string {
+  // Guard against NaN/Infinity from non-integer or non-numeric inputs
+  const rawLimit = Number.isFinite(args.limit) ? (args.limit ?? 10) : 10;
+  const limit = Math.min(Math.max(1, Math.floor(rawLimit)), 100);
 
   const filters: string[] = [];
 
@@ -44,21 +49,21 @@ function buildSparqlQuery(args: SearchArgs, assertionName: string): string {
 
   const filterBlock = filters.length > 0 ? filters.join('\n  ') : '';
 
+  // No GRAPH clause — the daemon scopes queries via contextGraphId + view API params.
+  // Using a bare assertion name as a GRAPH URI would be fragile and implementation-dependent.
   return `
 PREFIX wm: <https://ontology.origintrail.io/dkg/wm#>
 PREFIX schema: <https://schema.org/>
 
 SELECT ?id ?name ?type ?status ?contentHash ?capturedAt WHERE {
-  GRAPH <${assertionName}> {
-    ?id a wm:WorkingMemoryArtifact ;
-        wm:status ?status ;
-        wm:artifactType ?type ;
-        wm:contentHash ?contentHash ;
-        schema:name ?name ;
-        wm:provenance [ wm:capturedAt ?capturedAt ] .
-    OPTIONAL { ?id schema:text ?content }
-    ${filterBlock}
-  }
+  ?id a wm:WorkingMemoryArtifact ;
+      wm:status ?status ;
+      wm:artifactType ?type ;
+      wm:contentHash ?contentHash ;
+      schema:name ?name ;
+      wm:provenance [ wm:capturedAt ?capturedAt ] .
+  OPTIONAL { ?id schema:text ?content }
+  ${filterBlock}
 }
 ORDER BY DESC(?capturedAt)
 LIMIT ${limit}
@@ -102,25 +107,32 @@ export function createSearchTool(options: {
     },
 
     async handler(args: Record<string, unknown>): Promise<unknown> {
-      const query = typeof args['query'] === 'string' ? args['query'] : '';
+      // Trim and truncate query to prevent oversized SPARQL payloads
+      const rawQuery = typeof args['query'] === 'string' ? args['query'].trim() : '';
+      const query = rawQuery.slice(0, MAX_QUERY_LENGTH);
       const status = typeof args['status'] === 'string' ? args['status'] : undefined;
       const type = typeof args['type'] === 'string' ? args['type'] : undefined;
       const limit = typeof args['limit'] === 'number' ? args['limit'] : 10;
 
       const a: SearchArgs = { query, status, type, limit };
-      const sparql = buildSparqlQuery(a, config.assertionName);
+      const sparql = buildSparqlQuery(a);
 
-      const results = await client.querySparql(sparql, {
-        contextGraphId: config.contextGraph,
-        view: 'working-memory',
-      });
+      try {
+        const results = await client.querySparql(sparql, {
+          contextGraphId: config.contextGraph,
+          view: 'working-memory',
+        });
 
-      return {
-        success: true,
-        query,
-        results,
-        message: 'Working Memory search complete.',
-      };
+        return {
+          success: true,
+          query,
+          results,
+          message: 'Working Memory search complete.',
+        };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { success: false, query, message: `Search failed: ${msg}` };
+      }
     },
   };
 }

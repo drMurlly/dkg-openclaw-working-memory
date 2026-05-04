@@ -12,9 +12,15 @@ const SCHEMA = 'https://schema.org/';
 const DKG = 'https://ontology.origintrail.io/dkg/1.0#';
 const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
 
-/** Escape a string value for use as an N-Quads literal object. */
+/** Escape a string value for use as an N-Quads literal object (SPARQL 1.1 §19.8). */
 function lit(value: string): string {
-  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
+  return '"' + value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/\t/g, '\\t')
+    + '"';
 }
 
 /**

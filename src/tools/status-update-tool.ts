@@ -44,7 +44,12 @@ export function createStatusUpdateTool(options: {
       const modifiedAt = new Date().toISOString();
       const quads = serializeStatusUpdateQuads(artifactId, newStatus, modifiedAt);
 
-      await client.writeAssertion(config.contextGraph, config.assertionName, quads);
+      try {
+        await client.writeAssertion(config.contextGraph, config.assertionName, quads);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { success: false, artifactId, newStatus, message: `Failed to update status: ${msg}` };
+      }
 
       return {
         success: true,

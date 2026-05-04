@@ -175,4 +175,15 @@ describe('serializeToQuads', () => {
     expect(nameQuad!.object).toContain('\\\\backslash');
     expect(nameQuad!.object).toContain('\\n');
   });
+
+  it('escapes carriage return and tab in literal values', () => {
+    const withControl = {
+      ...artifact,
+      title: 'col1\tcol2\rend',
+    };
+    const quads = serializeToQuads(withControl);
+    const nameQuad = quads.find(q => q.predicate.includes('schema.org/name'));
+    expect(nameQuad!.object).toContain('\\t');
+    expect(nameQuad!.object).toContain('\\r');
+  });
 });

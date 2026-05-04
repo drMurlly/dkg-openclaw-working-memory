@@ -141,6 +141,17 @@ describe('deposit-tool', () => {
       expect(result['success']).toBe(true);
     });
 
+    it('returns error when DKG client throws during deposit', async () => {
+      vi.stubGlobal('fetch', vi.fn()
+        .mockResolvedValueOnce({ ok: true, status: 200, text: async () => JSON.stringify({}) })  // createAssertion fails next
+        .mockResolvedValueOnce({ ok: false, status: 500, text: async () => 'internal error' })
+      );
+      const tool = createDepositTool({ client: makeClient(), dedupe: new DedupeStore({ stateDir: tempDir }), config });
+      const result = await tool.handler({ content: LONG_CONTENT, artifactType: 'chat' }) as Record<string, unknown>;
+      expect(result['success']).toBe(false);
+      expect(String(result['message'])).toContain('Failed to deposit');
+    });
+
     it('logs warning and succeeds if dedupe.save() throws', async () => {
       vi.stubGlobal('fetch', vi.fn()
         .mockResolvedValueOnce({ ok: true, status: 200, text: async () => JSON.stringify({ assertionUri: 'ual:save-fail' }) })
@@ -209,6 +220,16 @@ describe('promote-tool', () => {
       await tool.handler({ artifactId: 'urn:dkg:wm:xyz', confirm: true });
       expect(promoteSpy).toHaveBeenCalledWith(config.contextGraph, config.assertionName);
     });
+
+    it('returns error when DKG client throws during promote', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: false, status: 503, text: async () => 'service unavailable',
+      }));
+      const tool = createPromoteTool({ client: makeClient(), config });
+      const result = await tool.handler({ artifactId: 'urn:dkg:wm:abc', confirm: true }) as Record<string, unknown>;
+      expect(result['success']).toBe(false);
+      expect(String(result['message'])).toContain('Failed to promote');
+    });
   });
 });
 
@@ -270,6 +291,16 @@ describe('status-update-tool', () => {
         ]),
       );
     });
+
+    it('returns error when DKG client throws during status update', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: false, status: 500, text: async () => 'write error',
+      }));
+      const tool = createStatusUpdateTool({ client: makeClient(), config });
+      const result = await tool.handler({ artifactId: 'urn:dkg:wm:abc', newStatus: 'validated' }) as Record<string, unknown>;
+      expect(result['success']).toBe(false);
+      expect(String(result['message'])).toContain('Failed to update status');
+    });
   });
 });
 
@@ -280,5 +311,13 @@ describe('search-tool (from tools barrel)', () => {
   it('is importable and returns results', async () => {
     const tool = createSearchTool({ client: makeClient(), config });
     expect(tool.name).toBe('search_working_memory');
+  });
+
+  it('returns error response when querySparql throws', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('SPARQL engine down')));
+    const tool = createSearchTool({ client: makeClient(), config });
+    const result = await tool.handler({ query: 'reentrancy' }) as Record<string, unknown>;
+    expect(result['success']).toBe(false);
+    expect(String(result['message'])).toContain('Search failed');
   });
 });

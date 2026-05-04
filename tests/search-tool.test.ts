@@ -141,4 +141,52 @@ describe('search-tool', () => {
       expect(body.sparql).not.toContain('FILTER(CONTAINS');
     });
   });
+
+  describe('limit edge cases', () => {
+    it('treats NaN limit as 10 (default) — LIMIT 10 in SPARQL', async () => {
+      const { tool, mockFn } = makeClientAndTool();
+
+      await tool.handler({ query: 'test', limit: NaN });
+
+      const [, init] = mockFn.mock.calls[0] as [string, RequestInit];
+      const body = JSON.parse(init.body as string) as { sparql: string };
+      expect(body.sparql).toContain('LIMIT 10');
+      expect(body.sparql).not.toContain('LIMIT NaN');
+    });
+
+    it('treats Infinity limit as default 10 (non-finite falls back to default)', async () => {
+      const { tool, mockFn } = makeClientAndTool();
+
+      await tool.handler({ query: 'test', limit: Infinity });
+
+      const [, init] = mockFn.mock.calls[0] as [string, RequestInit];
+      const body = JSON.parse(init.body as string) as { sparql: string };
+      // Infinity is not finite → falls back to default of 10
+      expect(body.sparql).toContain('LIMIT 10');
+      expect(body.sparql).not.toContain('LIMIT Infinity');
+    });
+
+    it('query string is trimmed and truncated to 500 chars', async () => {
+      const { tool, mockFn } = makeClientAndTool();
+      const longQuery = 'a'.repeat(600);
+
+      await tool.handler({ query: longQuery });
+
+      const [, init] = mockFn.mock.calls[0] as [string, RequestInit];
+      const body = JSON.parse(init.body as string) as { sparql: string };
+      // Truncated to 500 'a' chars
+      expect(body.sparql).toContain('a'.repeat(500));
+      expect(body.sparql).not.toContain('a'.repeat(501));
+    });
+
+    it('SPARQL query does not contain a GRAPH clause', async () => {
+      const { tool, mockFn } = makeClientAndTool();
+
+      await tool.handler({ query: 'vulnerability' });
+
+      const [, init] = mockFn.mock.calls[0] as [string, RequestInit];
+      const body = JSON.parse(init.body as string) as { sparql: string };
+      expect(body.sparql).not.toContain('GRAPH');
+    });
+  });
 });

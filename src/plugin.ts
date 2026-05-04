@@ -119,14 +119,18 @@ export class DkgOpenClawWorkingMemoryPlugin {
   }
 
   private async handleBeforeCompaction(event: {
-    contextSnapshot?: { messages?: Array<{ role: string; text: string }> };
+    contextSnapshot?: { messages?: unknown };
   }): Promise<void> {
-    const messages = event.contextSnapshot?.messages ?? [];
+    const messages = Array.isArray(event.contextSnapshot?.messages)
+      ? event.contextSnapshot.messages
+      : [];
     for (const msg of messages) {
-      if (msg.role !== 'assistant') continue;
-      if (msg.text.length < this.config.capture.minContentLength) continue;
+      if (!msg || typeof msg !== 'object') continue;
+      const { role, text } = msg as Record<string, unknown>;
+      if (role !== 'assistant') continue;
+      if (typeof text !== 'string' || text.length < this.config.capture.minContentLength) continue;
       await this.capture({
-        content: msg.text,
+        content: text,
         source: 'chat',
         artifactType: 'summary',
       });
@@ -134,6 +138,9 @@ export class DkgOpenClawWorkingMemoryPlugin {
   }
 
   async capture(raw: RawCaptureInput): Promise<void> {
+    // Guard: register() may have failed before client/dedupe were initialised
+    if (!this.client || !this.dedupe || !this.config) return;
+
     const artifact = normalizeArtifact(raw, this.config);
     if (!artifact) return;
 

@@ -156,9 +156,14 @@ export class DkgWmClient {
     try {
       await this.createContextGraph(id, name ?? id);
     } catch (err: unknown) {
-      if (err instanceof DkgApiError && (err.statusCode === 400 || err.statusCode === 409)) {
-        const msg = err.message.toLowerCase();
-        if (msg.includes('already exists') || msg.includes('already registered')) return;
+      if (err instanceof DkgApiError) {
+        // 409 unambiguously means "already exists" — swallow unconditionally
+        if (err.statusCode === 409) return;
+        // Some implementations use 400 with a descriptive message instead
+        if (err.statusCode === 400) {
+          const msg = err.message.toLowerCase();
+          if (msg.includes('already exists') || msg.includes('already registered')) return;
+        }
       }
       throw err;
     }
@@ -181,9 +186,10 @@ export class DkgWmClient {
       this.logger?.info?.(`[dkg-wm] Assertion '${name}' created — URI: ${receipt.assertionUri ?? 'none'}`);
       return receipt;
     } catch (err: unknown) {
-      if (err instanceof DkgApiError && (err.statusCode === 400 || err.statusCode === 409)) {
-        const msg = err.message.toLowerCase();
-        if (msg.includes('already exists')) {
+      if (err instanceof DkgApiError) {
+        // 409 unambiguously means "already exists" — swallow unconditionally
+        if (err.statusCode === 409) return { alreadyExists: true };
+        if (err.statusCode === 400 && err.message.toLowerCase().includes('already exists')) {
           return { alreadyExists: true };
         }
       }

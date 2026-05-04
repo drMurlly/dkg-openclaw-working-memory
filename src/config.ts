@@ -114,7 +114,7 @@ export function loadToken(config: PluginConfig): string {
   if (process.env['DKG_AUTH_TOKEN']) {
     return process.env['DKG_AUTH_TOKEN'];
   }
-  const tokenPath = config.authTokenPath.replace('~', homedir());
+  const tokenPath = config.authTokenPath.replace(/^~/, homedir());
   try {
     const raw = readFileSync(tokenPath, 'utf-8');
     const token = raw

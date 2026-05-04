@@ -121,12 +121,18 @@ export function createDepositTool(options: {
       }
 
       const quads = serializeToQuads(artifact);
-      const receipt = await client.createOrWriteAssertion({
-        contextGraphId: config.contextGraph,
-        name: config.assertionName,
-        quads,
-        assertionExists: dedupe.isAssertionCreated(),
-      });
+      let receipt: { ual?: string; alreadyExists?: boolean };
+      try {
+        receipt = await client.createOrWriteAssertion({
+          contextGraphId: config.contextGraph,
+          name: config.assertionName,
+          quads,
+          assertionExists: dedupe.isAssertionCreated(),
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { success: false, message: `Failed to deposit to Working Memory: ${msg}` };
+      }
 
       if (!dedupe.isAssertionCreated()) {
         dedupe.markAssertionCreated();

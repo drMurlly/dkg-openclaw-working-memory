@@ -39,7 +39,12 @@ export function createPromoteTool(options: {
 
       const artifactId = args['artifactId'];
 
-      await client.promoteAssertion(config.contextGraph, config.assertionName);
+      try {
+        await client.promoteAssertion(config.contextGraph, config.assertionName);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { success: false, artifactId, message: `Failed to promote artifact: ${msg}` };
+      }
 
       return {
         success: true,

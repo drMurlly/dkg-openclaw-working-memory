@@ -46,6 +46,11 @@ describe('ensureContextGraph', () => {
     await expect(makeClient().ensureContextGraph('bad-id')).rejects.toThrow(DkgApiError);
   });
 
+  it('swallows 409 even when body does not contain "already exists"', async () => {
+    vi.stubGlobal('fetch', mockFetch([{ ok: false, status: 409, body: { error: 'Conflict' } }]));
+    await expect(makeClient().ensureContextGraph('wm-artifacts')).resolves.toBeUndefined();
+  });
+
   it('passes optional name to createContextGraph', async () => {
     const mockFn = mockFetch([{ ok: true, status: 200 }]);
     vi.stubGlobal('fetch', mockFn);
@@ -81,6 +86,12 @@ describe('createAssertion', () => {
 
   it('returns { alreadyExists: true } on 409', async () => {
     vi.stubGlobal('fetch', mockFetch([{ ok: false, status: 409, body: { error: 'assertion already exists' } }]));
+    const receipt = await makeClient().createAssertion('wm-artifacts', 'artifacts');
+    expect(receipt.alreadyExists).toBe(true);
+  });
+
+  it('returns { alreadyExists: true } on 409 with generic Conflict body', async () => {
+    vi.stubGlobal('fetch', mockFetch([{ ok: false, status: 409, body: { error: 'Conflict' } }]));
     const receipt = await makeClient().createAssertion('wm-artifacts', 'artifacts');
     expect(receipt.alreadyExists).toBe(true);
   });

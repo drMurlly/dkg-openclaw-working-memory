@@ -181,6 +181,15 @@ describe('DkgOpenClawWorkingMemoryPlugin.capture()', () => {
     expect(fetchMock.mock.calls.length).toBe(before);
   });
 
+  it('returns immediately when client is not initialised (register() not called)', async () => {
+    const plugin = new DkgOpenClawWorkingMemoryPlugin();
+    // capture() on an unregistered plugin must not throw
+    await expect(plugin.capture({
+      content: 'This content is long enough to pass the minimum content length check.',
+      source: 'chat',
+    })).resolves.toBeUndefined();
+  });
+
   it('deposits content when valid and long enough', async () => {
     mockSuccessfulNode([
       { body: { assertionUri: 'ual:test:capture1' } }, // createAssertion
@@ -398,6 +407,28 @@ describe('before_compaction event hook', () => {
     const before = fetchMock.mock.calls.length;
     await handler({
       contextSnapshot: { messages: [{ role: 'assistant', text: 'short reply' }] },
+    });
+    expect(fetchMock.mock.calls.length).toBe(before);
+  });
+
+  it('handles non-array messages value gracefully', async () => {
+    const { handler } = await getCompactionHandler();
+    // messages is a string instead of an array — must not throw
+    expect(() => handler({ contextSnapshot: { messages: 'not-an-array' } })).not.toThrow();
+  });
+
+  it('skips message objects missing role or text fields', async () => {
+    const { handler } = await getCompactionHandler();
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    const before = fetchMock.mock.calls.length;
+    await handler({
+      contextSnapshot: {
+        messages: [
+          { role: 'assistant' },           // no text field
+          { text: 'some text' },           // no role field
+          null,                            // null entry
+        ],
+      },
     });
     expect(fetchMock.mock.calls.length).toBe(before);
   });
