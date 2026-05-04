@@ -8,7 +8,9 @@
   },
   "type": "module",
   "license": "Apache-2.0",
-  "engines": { "node": ">=22.0.0" },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -17,7 +19,11 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["dist", "LICENSE", "README.md"],
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
@@ -29,6 +35,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^1.6.0",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
   }

@@ -66,6 +66,26 @@ describe('search-tool', () => {
       expect(body.sparql).not.toMatch(/LCASE\([^)]*\n/);
     });
 
+    it('escapes carriage returns in query text', async () => {
+      const { tool, mockFn } = makeClientAndTool();
+
+      await tool.handler({ query: 'line\rreturn' });
+
+      const [, init] = mockFn.mock.calls[0] as [string, RequestInit];
+      const body = JSON.parse(init.body as string) as { sparql: string };
+      expect(body.sparql).toContain('\\r');
+    });
+
+    it('escapes tabs in query text', async () => {
+      const { tool, mockFn } = makeClientAndTool();
+
+      await tool.handler({ query: 'col1\tcol2' });
+
+      const [, init] = mockFn.mock.calls[0] as [string, RequestInit];
+      const body = JSON.parse(init.body as string) as { sparql: string };
+      expect(body.sparql).toContain('\\t');
+    });
+
     it('rejects unknown status values from SPARQL filter', async () => {
       const { tool, mockFn } = makeClientAndTool();
 

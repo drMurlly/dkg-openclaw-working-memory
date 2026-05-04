@@ -81,4 +81,36 @@ describe('dedupe-store', () => {
     store.add('sha256:b');
     expect(store.size()).toBe(2);
   });
+
+  it('save() creates parent directory when it does not exist (ENOENT recovery)', async () => {
+    const deepDir = join(tempDir, 'level1', 'level2');
+    // Do NOT create deepDir — save() must create it
+    const store = new DedupeStore({ stateDir: deepDir });
+    store.add('sha256:deep', 'ual:deep:test');
+    store.markAssertionCreated();
+
+    await expect(store.save()).resolves.toBeUndefined();
+
+    // Verify the file was written after directory creation
+    const store2 = new DedupeStore({ stateDir: deepDir });
+    await store2.load();
+    expect(store2.has('sha256:deep')).toBe(true);
+    expect(store2.isAssertionCreated()).toBe(true);
+  });
+
+  it('save() rethrows errors that are not ENOENT', async () => {
+    const store = new DedupeStore({ stateDir: '/dev/null/impossible' });
+    store.add('sha256:fail', 'ual:fail');
+    // /dev/null/impossible is not a directory path that can be created
+    await expect(store.save()).rejects.toThrow();
+  });
+
+  it('add() without ual stores entry with undefined ual', () => {
+    const store = new DedupeStore({ stateDir: tempDir });
+    store.add('sha256:noual');
+    const record = store.getRecord('sha256:noual');
+    expect(record).toBeDefined();
+    expect(record!.ual).toBeUndefined();
+    expect(record!.timestamp).toBeTruthy();
+  });
 });

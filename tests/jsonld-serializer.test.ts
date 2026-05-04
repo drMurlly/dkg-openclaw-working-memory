@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { serializeToJsonLd, serializeStatusUpdateQuads } from '../src/modules/jsonld-serializer.js';
+import { serializeToJsonLd, serializeToQuads, serializeStatusUpdateQuads } from '../src/modules/jsonld-serializer.js';
 import type { ArtifactRecord } from '../src/types/artifact.js';
 
 const artifact: ArtifactRecord = {
@@ -86,5 +86,93 @@ describe('jsonld-serializer', () => {
     expect(statusQuad).toBeDefined();
     expect(statusQuad!.subject).toBe('urn:dkg:wm:abc123');
     expect(statusQuad!.object).toBe('"validated"');
+  });
+});
+
+describe('serializeToQuads', () => {
+  it('returns an array of RDF quads', () => {
+    const quads = serializeToQuads(artifact);
+    expect(Array.isArray(quads)).toBe(true);
+    expect(quads.length).toBeGreaterThan(10);
+  });
+
+  it('includes rdf:type = wm:WorkingMemoryArtifact triple', () => {
+    const quads = serializeToQuads(artifact);
+    const typeQuad = quads.find(
+      q => q.predicate === 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type' &&
+           q.object.includes('WorkingMemoryArtifact'),
+    );
+    expect(typeQuad).toBeDefined();
+    expect(typeQuad!.subject).toBe(artifact.artifactId);
+  });
+
+  it('wraps string values as N-Quads literals (double-quoted)', () => {
+    const quads = serializeToQuads(artifact);
+    const statusQuad = quads.find(q => q.predicate.includes('status'));
+    expect(statusQuad!.object).toBe('"draft"');
+  });
+
+  it('includes all core artifact fields', () => {
+    const quads = serializeToQuads(artifact);
+    const predicates = quads.map(q => q.predicate);
+    expect(predicates.some(p => p.includes('artifactType'))).toBe(true);
+    expect(predicates.some(p => p.includes('contentHash'))).toBe(true);
+    expect(predicates.some(p => p.includes('schema.org/name'))).toBe(true);
+    expect(predicates.some(p => p.includes('schema.org/text'))).toBe(true);
+  });
+
+  it('includes provenance node with capturedAt', () => {
+    const quads = serializeToQuads(artifact);
+    const capturedAtQuad = quads.find(q => q.predicate.includes('capturedAt'));
+    expect(capturedAtQuad).toBeDefined();
+    expect(capturedAtQuad!.object).toContain('2026-05-04');
+  });
+
+  it('includes agent node with framework', () => {
+    const quads = serializeToQuads(artifact);
+    const frameworkQuad = quads.find(q => q.predicate.includes('framework'));
+    expect(frameworkQuad).toBeDefined();
+    expect(frameworkQuad!.object).toBe('"openclaw"');
+  });
+
+  it('includes conversationId quad when conversationId is set', () => {
+    const withConversation = {
+      ...artifact,
+      provenance: { ...artifact.provenance, conversationId: 'conv-abc-123' },
+    };
+    const quads = serializeToQuads(withConversation);
+    const convQuad = quads.find(q => q.predicate.includes('conversationId'));
+    expect(convQuad).toBeDefined();
+    expect(convQuad!.object).toBe('"conv-abc-123"');
+  });
+
+  it('omits conversationId quad when conversationId is absent', () => {
+    const quads = serializeToQuads(artifact); // artifact has no conversationId
+    expect(quads.some(q => q.predicate.includes('conversationId'))).toBe(false);
+  });
+
+  it('includes ual quad when dkg.ual is set', () => {
+    const withUal = { ...artifact, dkg: { ...artifact.dkg, ual: 'ual:dkg:abc123' } };
+    const quads = serializeToQuads(withUal);
+    const ualQuad = quads.find(q => q.predicate.includes('ual'));
+    expect(ualQuad).toBeDefined();
+    expect(ualQuad!.object).toBe('"ual:dkg:abc123"');
+  });
+
+  it('omits ual quad when dkg.ual is absent', () => {
+    const quads = serializeToQuads(artifact); // artifact has no ual
+    expect(quads.some(q => q.predicate.includes('wm#ual'))).toBe(false);
+  });
+
+  it('escapes special characters in literal values', () => {
+    const withSpecial = {
+      ...artifact,
+      title: 'Title with "quotes" and \\backslash and\nnewline',
+    };
+    const quads = serializeToQuads(withSpecial);
+    const nameQuad = quads.find(q => q.predicate.includes('schema.org/name'));
+    expect(nameQuad!.object).toContain('\\"quotes\\"');
+    expect(nameQuad!.object).toContain('\\\\backslash');
+    expect(nameQuad!.object).toContain('\\n');
   });
 });

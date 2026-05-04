@@ -120,8 +120,55 @@ describe('artifact-normalizer', () => {
   });
 
   it('returns null for non-string content', () => {
-    // Simulates a misconfigured tool call passing the wrong type
     const raw = { content: null, source: 'chat' } as unknown as RawCaptureInput;
     expect(normalizeArtifact(raw, config)).toBeNull();
+  });
+
+  it('infers implementation_log type for source=file with non-.md paths', () => {
+    const raw: RawCaptureInput = {
+      content: longContent,
+      source: 'file',
+      filePaths: ['src/utils/helpers.ts', 'src/index.ts'],
+    };
+    const artifact = normalizeArtifact(raw, config)!;
+    expect(artifact.artifactType).toBe('implementation_log');
+  });
+
+  it('infers research_note type for source=tool', () => {
+    const raw: RawCaptureInput = { content: longContent, source: 'tool' };
+    const artifact = normalizeArtifact(raw, config)!;
+    expect(artifact.artifactType).toBe('research_note');
+  });
+
+  it('infers other type for source=api without explicit type', () => {
+    const raw: RawCaptureInput = { content: longContent, source: 'api' };
+    const artifact = normalizeArtifact(raw, config)!;
+    expect(artifact.artifactType).toBe('other');
+  });
+
+  it('carries through sessionId and conversationId in provenance', () => {
+    const raw: RawCaptureInput = {
+      content: longContent,
+      source: 'chat',
+      sessionId: 'sess-999',
+      conversationId: 'conv-777',
+    };
+    const artifact = normalizeArtifact(raw, config)!;
+    expect(artifact.provenance.sessionId).toBe('sess-999');
+    expect(artifact.provenance.conversationId).toBe('conv-777');
+  });
+
+  it('generates title from first 80 chars when no title provided', () => {
+    const raw: RawCaptureInput = { content: longContent, source: 'chat' };
+    const artifact = normalizeArtifact(raw, config)!;
+    expect(artifact.title.length).toBeLessThanOrEqual(80);
+    expect(artifact.title.length).toBeGreaterThan(0);
+  });
+
+  it('does not redact content when redaction is disabled', () => {
+    const withKey = longContent + ' KEY=sk-' + 'x'.repeat(30);
+    const noRedactConfig = { ...config, redaction: { enabled: false } };
+    const artifact = normalizeArtifact({ content: withKey, source: 'chat' }, noRedactConfig)!;
+    expect(artifact.content).toContain('sk-');
   });
 });
