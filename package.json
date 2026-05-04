@@ -1,0 +1,31 @@
+{
+  "name": "dkg-openclaw-working-memory",
+  "version": "1.0.0",
+  "description": "OpenClaw plugin that deposits drafted artifacts into DKG V10 Working Memory with status tags and provenance",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": { "node": ">=22.0.0" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist", "LICENSE", "README.md"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "test:live": "vitest run tests/live-integration.test.ts",
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}

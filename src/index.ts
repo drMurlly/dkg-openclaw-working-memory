@@ -1,0 +1,10 @@
+export { DkgOpenClawWorkingMemoryPlugin, default } from './plugin.js';
+export * from './types/artifact.js';
+export type { OpenClawPluginApi, OpenClawTool, OpenClawLogger } from './types/openclaw.js';
+export { DkgWmClient, DkgAuthError, DkgUnavailableError, DkgApiError } from './modules/dkg-wm-client.js';
+export { DedupeStore } from './modules/dedupe-store.js';
+export { normalizeArtifact } from './modules/artifact-normalizer.js';
+export { redact } from './modules/secret-redactor.js';
+export { serializeToJsonLd } from './modules/jsonld-serializer.js';
+export { classifyStatus } from './modules/status-classifier.js';
+export { buildProvenance } from './modules/provenance-builder.js';
