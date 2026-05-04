@@ -4,11 +4,6 @@ import { ARTIFACT_STATUSES } from '../types/artifact.js';
 import type { DkgWmClient } from '../modules/dkg-wm-client.js';
 import { serializeStatusUpdateQuads } from '../modules/jsonld-serializer.js';
 
-interface StatusUpdateArgs {
-  artifactId: string;
-  newStatus: string;
-}
-
 export function createStatusUpdateTool(options: {
   client: DkgWmClient;
   config: PluginConfig;
@@ -34,19 +29,29 @@ export function createStatusUpdateTool(options: {
     },
 
     async handler(args: Record<string, unknown>): Promise<unknown> {
-      const a = args as unknown as StatusUpdateArgs;
+      if (typeof args['artifactId'] !== 'string' || !args['artifactId']) {
+        return { success: false, message: 'artifactId must be a non-empty string.' };
+      }
+      if (typeof args['newStatus'] !== 'string' || !ARTIFACT_STATUSES.includes(args['newStatus'] as never)) {
+        return {
+          success: false,
+          message: `newStatus must be one of: ${ARTIFACT_STATUSES.join(', ')}.`,
+        };
+      }
 
+      const artifactId = args['artifactId'];
+      const newStatus = args['newStatus'];
       const modifiedAt = new Date().toISOString();
-      const quads = serializeStatusUpdateQuads(a.artifactId, a.newStatus, modifiedAt);
+      const quads = serializeStatusUpdateQuads(artifactId, newStatus, modifiedAt);
 
       await client.writeAssertion(config.contextGraph, config.assertionName, quads);
 
       return {
         success: true,
-        artifactId: a.artifactId,
-        newStatus: a.newStatus,
+        artifactId,
+        newStatus,
         modifiedAt,
-        message: `Artifact status updated to '${a.newStatus}'.`,
+        message: `Artifact status updated to '${newStatus}'.`,
       };
     },
   };

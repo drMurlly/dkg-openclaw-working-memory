@@ -151,4 +151,49 @@ describe('dkg-wm-client', () => {
       expect(headers['Authorization']).toBe(`Bearer ${TOKEN}`);
     });
   });
+
+  describe('retry on DkgUnavailableError', () => {
+    it('retries on 503 and succeeds on subsequent attempt', async () => {
+      const mockFn = mockFetch([
+        { ok: false, status: 503 },
+        { ok: false, status: 503 },
+        { ok: true, status: 200, body: {} },
+      ]);
+      vi.stubGlobal('fetch', mockFn);
+      const client = new DkgWmClient({ daemonUrl: DAEMON, token: TOKEN, maxRetries: 3 });
+
+      // Stub setTimeout so retry delays don't slow the test
+      vi.stubGlobal('setTimeout', (fn: () => void) => { fn(); return 0 as unknown as ReturnType<typeof setTimeout>; });
+
+      await expect(client.createContextGraph('test')).resolves.toBeUndefined();
+      expect(mockFn.mock.calls).toHaveLength(3);
+
+      vi.unstubAllGlobals();
+    });
+
+    it('throws after exhausting retries', async () => {
+      const mockFn = mockFetch([
+        { ok: false, status: 503 },
+        { ok: false, status: 503 },
+        { ok: false, status: 503 },
+        { ok: false, status: 503 },
+      ]);
+      vi.stubGlobal('fetch', mockFn);
+      vi.stubGlobal('setTimeout', (fn: () => void) => { fn(); return 0 as unknown as ReturnType<typeof setTimeout>; });
+      const client = new DkgWmClient({ daemonUrl: DAEMON, token: TOKEN, maxRetries: 2 });
+
+      await expect(client.createContextGraph('test')).rejects.toThrow('unavailable');
+
+      vi.unstubAllGlobals();
+    });
+
+    it('does NOT retry on 404 API errors', async () => {
+      const mockFn = mockFetch([{ ok: false, status: 404 }]);
+      vi.stubGlobal('fetch', mockFn);
+      const client = makeClient();
+
+      await expect(client.createContextGraph('test')).rejects.toThrow('404');
+      expect(mockFn.mock.calls).toHaveLength(1);
+    });
+  });
 });

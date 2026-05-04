@@ -1,6 +1,6 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { OpenClawPluginApi } from './types/openclaw.js';
+import type { OpenClawPluginApi, OpenClawLogger } from './types/openclaw.js';
 import type { RawCaptureInput } from './types/artifact.js';
 import { DkgWmClient } from './modules/dkg-wm-client.js';
 import { DedupeStore } from './modules/dedupe-store.js';
@@ -18,10 +18,12 @@ export class DkgOpenClawWorkingMemoryPlugin {
   private client!: DkgWmClient;
   private dedupe!: DedupeStore;
   private config!: ReturnType<typeof loadConfig>;
+  private logger?: OpenClawLogger;
 
   async register(api: OpenClawPluginApi): Promise<void> {
     if (api.registrationMode !== 'full') return;
 
+    this.logger = api.logger;
     this.config = loadConfig(api);
 
     if (!this.config.enabled) {
@@ -78,8 +80,22 @@ export class DkgOpenClawWorkingMemoryPlugin {
     );
 
     if (this.config.capture.autoCapture) {
-      api.on('agent_end', this.handleAgentEnd.bind(this));
-      api.on('before_compaction', this.handleBeforeCompaction.bind(this));
+      api.on('agent_end', (event) => {
+        this.handleAgentEnd(event as { messageText?: string; sessionId?: string; conversationId?: string })
+          .catch(err => {
+            this.logger?.warn?.(
+              `[dkg-wm] agent_end capture error: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          });
+      });
+      api.on('before_compaction', (event) => {
+        this.handleBeforeCompaction(event as { contextSnapshot?: { messages?: Array<{ role: string; text: string }> } })
+          .catch(err => {
+            this.logger?.warn?.(
+              `[dkg-wm] before_compaction capture error: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          });
+      });
     }
 
     api.logger.info('dkg-openclaw-working-memory: plugin registered');
@@ -139,11 +155,16 @@ export class DkgOpenClawWorkingMemoryPlugin {
 
       artifact.dkg.ual = receipt.ual;
       this.dedupe.add(artifact.contentHash, receipt.ual);
-      await this.dedupe.save();
+
+      try {
+        await this.dedupe.save();
+      } catch {
+        this.logger?.warn?.('[dkg-wm] Auto-capture: failed to persist dedupe index');
+      }
     } catch (err: unknown) {
       // log but don't throw — auto-capture failure must not disrupt the agent
       const msg = err instanceof Error ? err.message : String(err);
-      this.client['logger']?.warn?.(`[dkg-wm] Auto-capture failed: ${msg}`);
+      this.logger?.warn?.(`[dkg-wm] Auto-capture failed: ${msg}`);
     }
   }
 }

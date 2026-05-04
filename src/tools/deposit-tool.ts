@@ -6,6 +6,8 @@ import type { DedupeStore } from '../modules/dedupe-store.js';
 import { normalizeArtifact } from '../modules/artifact-normalizer.js';
 import { serializeToQuads } from '../modules/jsonld-serializer.js';
 
+const MAX_CONTENT_LENGTH = 500_000;
+
 interface DepositArgs {
   content: string;
   artifactType: string;
@@ -56,10 +58,31 @@ export function createDepositTool(options: {
     },
 
     async handler(args: Record<string, unknown>): Promise<unknown> {
-      const a = args as unknown as DepositArgs;
-
       if (!config.enabled) {
         return { success: false, message: 'Plugin is disabled in config.' };
+      }
+
+      // Explicit type validation before use
+      if (typeof args['content'] !== 'string') {
+        return { success: false, message: 'content must be a string.' };
+      }
+      if (typeof args['artifactType'] !== 'string') {
+        return { success: false, message: 'artifactType must be a string.' };
+      }
+
+      const a: DepositArgs = {
+        content: args['content'],
+        artifactType: args['artifactType'],
+        status: typeof args['status'] === 'string' ? args['status'] : undefined,
+        title: typeof args['title'] === 'string' ? args['title'] : undefined,
+        sessionId: typeof args['sessionId'] === 'string' ? args['sessionId'] : undefined,
+      };
+
+      if (a.content.length > MAX_CONTENT_LENGTH) {
+        return {
+          success: false,
+          message: `Content exceeds maximum allowed size of ${MAX_CONTENT_LENGTH} characters.`,
+        };
       }
 
       const artifact = normalizeArtifact(
@@ -111,7 +134,13 @@ export function createDepositTool(options: {
 
       artifact.dkg.ual = receipt.ual;
       dedupe.add(artifact.contentHash, receipt.ual);
-      await dedupe.save();
+
+      // Persist dedup index; non-fatal if it fails (artifact is already stored)
+      try {
+        await dedupe.save();
+      } catch {
+        client.logger?.warn?.('[dkg-wm] Failed to persist dedupe index — next session may re-deposit this artifact');
+      }
 
       return {
         success: true,

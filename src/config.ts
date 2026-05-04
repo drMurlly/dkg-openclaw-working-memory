@@ -106,14 +106,28 @@ export function loadConfig(api: OpenClawPluginApi): PluginConfig {
   };
 }
 
+/**
+ * Load the bearer token from env or token file.
+ * Token files written by the DKG daemon may contain comment lines (# ...) — strip them.
+ */
 export function loadToken(config: PluginConfig): string {
   if (process.env['DKG_AUTH_TOKEN']) {
     return process.env['DKG_AUTH_TOKEN'];
   }
   const tokenPath = config.authTokenPath.replace('~', homedir());
   try {
-    return readFileSync(tokenPath, 'utf-8').trim();
-  } catch {
+    const raw = readFileSync(tokenPath, 'utf-8');
+    const token = raw
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0 && !line.startsWith('#'))
+      .join('');
+    if (!token) {
+      throw new Error(`Token file at ${tokenPath} is empty or contains only comments.`);
+    }
+    return token;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.includes('Token file')) throw err;
     throw new Error(
       `DKG auth token not found at ${tokenPath}. ` +
       'Set DKG_AUTH_TOKEN env var or ensure ~/.dkg/auth.token exists.',

@@ -37,6 +37,7 @@ interface DkgWmClientOptions {
   daemonUrl: string;
   token: string;
   timeoutMs?: number;
+  maxRetries?: number;
   logger?: OpenClawLogger;
 }
 
@@ -55,12 +56,14 @@ export class DkgWmClient {
   private readonly daemonUrl: string;
   private readonly token: string;
   private readonly timeoutMs: number;
-  private readonly logger?: OpenClawLogger;
+  private readonly maxRetries: number;
+  readonly logger?: OpenClawLogger;
 
   constructor(options: DkgWmClientOptions) {
     this.daemonUrl = options.daemonUrl.replace(/\/$/, '');
     this.token = options.token;
     this.timeoutMs = options.timeoutMs ?? 30_000;
+    this.maxRetries = options.maxRetries ?? 3;
     this.logger = options.logger;
   }
 
@@ -117,17 +120,37 @@ export class DkgWmClient {
     }
   }
 
+  /**
+   * Wraps request() with exponential-backoff retry for transient node unavailability.
+   * Auth errors and API errors (4xx) are never retried.
+   */
+  private async requestWithRetry<T>(method: string, path: string, body?: unknown): Promise<T> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        return await this.request<T>(method, path, body);
+      } catch (err: unknown) {
+        if (!(err instanceof DkgUnavailableError) || attempt === this.maxRetries) throw err;
+        lastErr = err;
+        const delayMs = (2 ** attempt) * 250;
+        this.logger?.info?.(`[dkg-wm] Node unavailable, retrying in ${delayMs}ms (attempt ${attempt + 1}/${this.maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+    throw lastErr;
+  }
+
   // ---------------------------------------------------------------------------
   // Context Graph
   // ---------------------------------------------------------------------------
 
   async createContextGraph(id: string, name: string, description?: string): Promise<void> {
-    await this.request<unknown>('POST', '/api/context-graph/create', { id, name, description });
-    this.logger?.info(`[dkg-wm] Context Graph '${id}' created`);
+    await this.requestWithRetry<unknown>('POST', '/api/context-graph/create', { id, name, description });
+    this.logger?.info?.(`[dkg-wm] Context Graph '${id}' created`);
   }
 
   /**
-   * Create context graph, swallowing "already exists" 400 errors so calls are idempotent.
+   * Create context graph, swallowing "already exists" 400/409 errors so calls are idempotent.
    */
   async ensureContextGraph(id: string, name?: string): Promise<void> {
     try {
@@ -151,14 +174,14 @@ export class DkgWmClient {
    */
   async createAssertion(contextGraphId: string, name: string): Promise<CreateAssertionReceipt> {
     try {
-      const receipt = await this.request<CreateAssertionReceipt>('POST', '/api/assertion/create', {
+      const receipt = await this.requestWithRetry<CreateAssertionReceipt>('POST', '/api/assertion/create', {
         contextGraphId,
         name,
       });
-      this.logger?.info(`[dkg-wm] Assertion '${name}' created — URI: ${receipt.assertionUri ?? 'none'}`);
+      this.logger?.info?.(`[dkg-wm] Assertion '${name}' created — URI: ${receipt.assertionUri ?? 'none'}`);
       return receipt;
     } catch (err: unknown) {
-      if (err instanceof DkgApiError && err.statusCode === 400) {
+      if (err instanceof DkgApiError && (err.statusCode === 400 || err.statusCode === 409)) {
         const msg = err.message.toLowerCase();
         if (msg.includes('already exists')) {
           return { alreadyExists: true };
@@ -173,17 +196,17 @@ export class DkgWmClient {
    * Quads must be in the format: { subject: URI, predicate: URI, object: URI or "literal" }
    */
   async writeAssertion(contextGraphId: string, name: string, quads: RdfQuad[]): Promise<WriteReceipt> {
-    const receipt = await this.request<WriteReceipt>('POST', `/api/assertion/${encodeURIComponent(name)}/write`, {
+    const receipt = await this.requestWithRetry<WriteReceipt>('POST', `/api/assertion/${encodeURIComponent(name)}/write`, {
       contextGraphId,
       quads,
     });
-    this.logger?.info(`[dkg-wm] Wrote ${quads.length} quads to '${name}'`);
+    this.logger?.info?.(`[dkg-wm] Wrote ${quads.length} quads to '${name}'`);
     return receipt;
   }
 
   /**
-   * Create assertion + write quads in one call.
-   * If assertionExists=true, skips the create step.
+   * Create assertion + write quads in one logical operation.
+   * If assertionExists=true, skips the create step and only writes.
    */
   async createOrWriteAssertion(params: {
     contextGraphId: string;
@@ -206,21 +229,21 @@ export class DkgWmClient {
    * Dump all quads from an assertion graph.
    */
   async queryAssertion(contextGraphId: string, name: string): Promise<{ quads: RdfQuad[]; count: number }> {
-    return this.request('POST', `/api/assertion/${encodeURIComponent(name)}/query`, {
+    return this.requestWithRetry('POST', `/api/assertion/${encodeURIComponent(name)}/query`, {
       contextGraphId,
     });
   }
 
   async getAssertionHistory(contextGraphId: string, name: string): Promise<unknown> {
     const params = new URLSearchParams({ contextGraphId });
-    return this.request<unknown>('GET', `/api/assertion/${encodeURIComponent(name)}/history?${params.toString()}`);
+    return this.requestWithRetry<unknown>('GET', `/api/assertion/${encodeURIComponent(name)}/history?${params.toString()}`);
   }
 
   async promoteAssertion(contextGraphId: string, name: string): Promise<void> {
-    await this.request<unknown>('POST', `/api/assertion/${encodeURIComponent(name)}/promote`, {
+    await this.requestWithRetry<unknown>('POST', `/api/assertion/${encodeURIComponent(name)}/promote`, {
       contextGraphId,
     });
-    this.logger?.info(`[dkg-wm] Assertion '${name}' promoted to Shared Working Memory`);
+    this.logger?.info?.(`[dkg-wm] Assertion '${name}' promoted to Shared Working Memory`);
   }
 
   // ---------------------------------------------------------------------------
@@ -238,7 +261,7 @@ export class DkgWmClient {
       assertionName?: string;
     },
   ): Promise<unknown> {
-    return this.request<unknown>('POST', '/api/query', {
+    return this.requestWithRetry<unknown>('POST', '/api/query', {
       sparql,
       view: opts?.view ?? 'working-memory',
       contextGraphId: opts?.contextGraphId,
@@ -251,6 +274,6 @@ export class DkgWmClient {
   // ---------------------------------------------------------------------------
 
   async getStatus(): Promise<unknown> {
-    return this.request<unknown>('GET', '/api/status');
+    return this.requestWithRetry<unknown>('GET', '/api/status');
   }
 }

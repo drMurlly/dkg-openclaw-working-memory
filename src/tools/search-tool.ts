@@ -10,19 +10,32 @@ interface SearchArgs {
   limit?: number;
 }
 
+/**
+ * Escape a value for safe interpolation inside a SPARQL double-quoted string literal.
+ * Covers all escape sequences defined by SPARQL 1.1 §19.8.
+ */
+function escapeSparqlString(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+}
+
 function buildSparqlQuery(args: SearchArgs, assertionName: string): string {
-  const limit = args.limit ?? 10;
+  const limit = Math.min(Math.max(1, Math.floor(args.limit ?? 10)), 100);
 
   const filters: string[] = [];
 
-  if (args.status) {
-    filters.push(`FILTER(?status = "${args.status}")`);
+  if (args.status && ARTIFACT_STATUSES.includes(args.status as never)) {
+    filters.push(`FILTER(?status = "${escapeSparqlString(args.status)}")`);
   }
-  if (args.type) {
-    filters.push(`FILTER(?type = "${args.type}")`);
+  if (args.type && ARTIFACT_TYPES.includes(args.type as never)) {
+    filters.push(`FILTER(?type = "${escapeSparqlString(args.type)}")`);
   }
   if (args.query) {
-    const escaped = args.query.replace(/"/g, '\\"');
+    const escaped = escapeSparqlString(args.query);
     filters.push(
       `FILTER(CONTAINS(LCASE(STR(?content)), LCASE("${escaped}")) || ` +
       `CONTAINS(LCASE(STR(?name)), LCASE("${escaped}")))`
@@ -84,12 +97,17 @@ export function createSearchTool(options: {
         type: 'number',
         optional: true,
         default: 10,
-        description: 'Maximum number of results to return.',
+        description: 'Maximum number of results to return (1–100).',
       },
     },
 
     async handler(args: Record<string, unknown>): Promise<unknown> {
-      const a = args as unknown as SearchArgs;
+      const query = typeof args['query'] === 'string' ? args['query'] : '';
+      const status = typeof args['status'] === 'string' ? args['status'] : undefined;
+      const type = typeof args['type'] === 'string' ? args['type'] : undefined;
+      const limit = typeof args['limit'] === 'number' ? args['limit'] : 10;
+
+      const a: SearchArgs = { query, status, type, limit };
       const sparql = buildSparqlQuery(a, config.assertionName);
 
       const results = await client.querySparql(sparql, {
@@ -99,7 +117,7 @@ export function createSearchTool(options: {
 
       return {
         success: true,
-        query: a.query,
+        query,
         results,
         message: 'Working Memory search complete.',
       };

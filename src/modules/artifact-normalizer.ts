@@ -4,6 +4,8 @@ import { buildProvenance } from './provenance-builder.js';
 import { classifyStatus } from './status-classifier.js';
 
 const PACKAGE_VERSION = '1.0.0';
+/** Hard ceiling to keep DKG write payloads reasonable — 500 KB. */
+const MAX_CONTENT_LENGTH = 500_000;
 
 function inferType(raw: RawCaptureInput): ArtifactType {
   if (raw.artifactType) return raw.artifactType;
@@ -28,7 +30,9 @@ export function normalizeArtifact(
   raw: RawCaptureInput,
   config: PluginConfig,
 ): ArtifactRecord | null {
+  if (typeof raw.content !== 'string') return null;
   if (raw.content.length < config.capture.minContentLength) return null;
+  if (raw.content.length > MAX_CONTENT_LENGTH) return null;
 
   const redacted = config.redaction.enabled ? redact(raw.content) : raw.content;
   const { contentHash, artifactId, provenance } = buildProvenance(redacted, raw, config);

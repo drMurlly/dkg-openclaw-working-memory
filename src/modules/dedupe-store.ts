@@ -1,5 +1,5 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 interface DedupeEntry {
   ual?: string;
@@ -62,13 +62,13 @@ export class DedupeStore {
       entries: Object.fromEntries(this.entries),
       assertionCreated: this.assertionCreated,
     };
+    const serialized = JSON.stringify(data, null, 2);
     try {
-      await writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
+      await writeFile(this.filePath, serialized, 'utf-8');
     } catch (err: unknown) {
-      const nodeErr = err as NodeJS.ErrnoException;
-      if (nodeErr.code === 'ENOENT') {
-        await mkdir(join(this.filePath, '..'), { recursive: true });
-        await writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
+      if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+        await mkdir(dirname(this.filePath), { recursive: true });
+        await writeFile(this.filePath, serialized, 'utf-8');
       } else {
         throw err;
       }

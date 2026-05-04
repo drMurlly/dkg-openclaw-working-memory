@@ -2,11 +2,6 @@ import type { OpenClawTool } from '../types/openclaw.js';
 import type { PluginConfig } from '../types/artifact.js';
 import type { DkgWmClient } from '../modules/dkg-wm-client.js';
 
-interface PromoteArgs {
-  artifactId: string;
-  confirm: boolean;
-}
-
 export function createPromoteTool(options: {
   client: DkgWmClient;
   config: PluginConfig;
@@ -31,9 +26,10 @@ export function createPromoteTool(options: {
     },
 
     async handler(args: Record<string, unknown>): Promise<unknown> {
-      const a = args as unknown as PromoteArgs;
-
-      if (!a.confirm) {
+      if (typeof args['artifactId'] !== 'string' || !args['artifactId']) {
+        return { success: false, message: 'artifactId must be a non-empty string.' };
+      }
+      if (args['confirm'] !== true) {
         return {
           success: false,
           message:
@@ -41,11 +37,13 @@ export function createPromoteTool(options: {
         };
       }
 
+      const artifactId = args['artifactId'];
+
       await client.promoteAssertion(config.contextGraph, config.assertionName);
 
       return {
         success: true,
-        artifactId: a.artifactId,
+        artifactId,
         assertionName: config.assertionName,
         message:
           `Artifact promoted to Shared Working Memory. ` +

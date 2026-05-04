@@ -113,4 +113,15 @@ describe('artifact-normalizer', () => {
     const artifact = normalizeArtifact(raw, config)!;
     expect(artifact.provenance.workspaceProject).toBe('wm-artifacts');
   });
+
+  it('returns null for content exceeding 500KB', () => {
+    const raw: RawCaptureInput = { content: 'x'.repeat(500_001), source: 'chat' };
+    expect(normalizeArtifact(raw, config)).toBeNull();
+  });
+
+  it('returns null for non-string content', () => {
+    // Simulates a misconfigured tool call passing the wrong type
+    const raw = { content: null, source: 'chat' } as unknown as RawCaptureInput;
+    expect(normalizeArtifact(raw, config)).toBeNull();
+  });
 });
