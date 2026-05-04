@@ -16,8 +16,8 @@ The DKG ecosystem already ships two first-party integrations adjacent to this su
 | Dimension | `cursor-mcp-dkg` | `openclaw-working-memory` (this) |
 |---|---|---|
 | **Install kind** | MCP server | OpenClaw agent-plugin |
-| **Capture model** | Pull (client invokes tool) | Push (event-driven auto-capture on `agent_end`) |
-| **Trigger** | User prompt asks the agent to write | Every assistant turn fires capture automatically |
+| **Capture model** | Pull (client invokes tool) | Push (event-driven auto-capture on `agent_end` and `before_compaction`) |
+| **Trigger** | User prompt asks the agent to write | Every assistant turn fires capture automatically; also fires before context compaction |
 | **Target users** | Coding-assistant users (Cursor / Claude Code / Claude Desktop) | Autoresearch / bug-bounty research users (OpenClaw) |
 | **Capture pipeline** | Generic write/read | Status-tagged + content-hash deduplicated + secret-redacted |
 | **Provenance** | Generic | Session-scoped, agent-attributed, tool-call-tracked, project-scoped |
@@ -209,9 +209,12 @@ This query works today against Working Memory and works unchanged after promotio
 
 - **No Curator authority invoked automatically.** The plugin only calls `POST /api/assertion/create` and `POST /api/assertion/{name}/write` automatically. `POST /api/assertion/{name}/promote` is exposed as an explicit tool but is never called without user instruction via agent conversation.
 - **No PUBLISH or SHARE operations** are ever invoked automatically.
-- **Bearer token** read from `~/.dkg/auth.token` (local file) or `DKG_AUTH_TOKEN` env var. Never transmitted outside localhost.
+- **Bearer token** read from `~/.dkg/auth.token` (local file) or `DKG_AUTH_TOKEN` env var. Never transmitted outside localhost. Comment lines in token files are stripped correctly.
 - **Network egress:** Only to `http://127.0.0.1:9200`. No external network calls.
-- **Secret redaction:** Strips API keys, private keys, bearer tokens, PEM blocks, and `.env`-style secrets from all artifact content before any DKG write.
+- **Secret redaction:** Strips OpenAI-style `sk-` keys, GitHub PATs, ETH private keys (hex 64-char), PEM blocks, bearer tokens, and `.env`-style `KEY=value` secrets from all artifact content before any DKG write.
+- **SPARQL injection prevention:** All user-supplied search strings are escaped (`\`, `"`, `\n`, `\r`, `\t`) before interpolation into SPARQL string literals. Status and type filter values are validated against a strict enum — unrecognised values are dropped, never injected. N-Quads literal escaping covers all SPARQL 1.1 §19.8 special characters.
+- **Tool error safety:** All four tool handlers catch DKG client errors and return `{success: false, message: ...}` — they never throw unhandled exceptions that could disrupt the agent turn.
+- **Input size limits:** Artifact content is capped at 500 KB; search query strings are truncated at 500 characters before SPARQL interpolation.
 - **No dynamic code loading:** No `eval`, no remote module fetch. Static TypeScript compiled to ESM.
 - **npm audit --production clean** at time of publish.
 - **Published with `npm publish --provenance`** via GitHub Actions (OIDC-backed build attestation).
