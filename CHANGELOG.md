@@ -7,6 +7,30 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.0.1] - 2026-05-04
+
+### Fixed
+
+- **SPARQL injection:** All user-supplied query strings now escaped for `\`, `"`, `\n`, `\r`, `\t` before SPARQL interpolation; status and type filter values validated against enum (invalid values dropped, never injected).
+- **N-Quads `lit()` escaping:** Added `\r` and `\t` escaping to cover all SPARQL 1.1 §19.8 special characters.
+- **GRAPH clause removed from search SPARQL:** Bare assertion name is not a valid named graph URI; daemon scopes via `contextGraphId` + API params — no GRAPH clause needed.
+- **Tool error wrapping:** All four tool handlers now catch DKG client errors and return `{success: false, message: ...}` instead of throwing — agent turns are never disrupted.
+- **409 Conflict handling:** `ensureContextGraph` and `createAssertion` now match 409 by HTTP status code alone (not message text) — robust across DKG node implementations.
+- **Uninitialized state guard:** `capture()` returns immediately if `client`, `dedupe`, or `config` are not yet set — safe to call before `register()` completes.
+- **`before_compaction` safety:** `messages` validated with `Array.isArray()`; each message's `role` and `text` fields guarded against missing/wrong-type values.
+- **Tilde expansion anchored:** Auth token path tilde expansion uses `/^~/` regex (anchored to start of string) instead of string replace.
+- **NaN/Infinity limit guard:** `Number.isFinite()` check prevents `LIMIT NaN` or `LIMIT Infinity` in generated SPARQL.
+- **Query truncation:** Search query strings trimmed and truncated to 500 characters before SPARQL interpolation.
+- **CI lockfile:** Regenerated `package-lock.json` to resolve `vitest@1.6.0`/`1.6.1` peer dependency mismatch that failed `npm ci`.
+
+### Changed
+
+- **219 tests** (214 unit/integration + 5 live), up from 73 at initial tag.
+- **98.97% statement coverage**, **93.25% branch coverage**, **100% function coverage**.
+- Documentation fully audited: corrected `minContentLength` default (120, not 200), added `agentId` / `DKG_WM_AGENT_ID`, accurate test counts, expanded security sections.
+
+---
+
 ## [1.0.0] - 2026-05-04
 
 ### Added
@@ -67,4 +91,5 @@ All tool handlers return `{success: false, message: ...}` on DKG errors — they
 
 ---
 
+[1.0.1]: https://github.com/drMurlly/dkg-openclaw-working-memory/releases/tag/v1.0.1
 [1.0.0]: https://github.com/drMurlly/dkg-openclaw-working-memory/releases/tag/v1.0.0
