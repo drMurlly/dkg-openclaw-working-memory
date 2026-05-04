@@ -1,8 +1,8 @@
 # dkg-openclaw-working-memory
 
-OpenClaw plugin that automatically captures every substantive artifact an agent produces and deposits it into [DKG V10 Working Memory](https://docs.origintrail.io/dkg-v10/working-memory) — giving your research agents persistent, queryable, attributable memory across sessions.
+OpenClaw plugin that automatically captures every substantive artifact an agent produces and deposits it into [DKG V10 Working Memory](https://github.com/OriginTrail/dkg) — giving your research agents persistent, queryable, attributable memory across sessions.
 
-Built for the [OriginTrail DKG V10 Bounty Program](https://origintrail.io) — Round 1 (`cfi-dkgv10-r1`).
+Built for the [OriginTrail DKG V10 Bounty Program](https://docs.origintrail.io/origintrail-v9-v10/origintrail-dkg-v10-bounty-program) — Round 1 (`cfi-dkgv10-r1`).
 
 ---
 
