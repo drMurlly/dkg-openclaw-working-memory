@@ -1,6 +1,6 @@
 {
   "name": "dkg-openclaw-working-memory",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "OpenClaw plugin that deposits drafted artifacts into DKG V10 Working Memory with status tags and provenance",
   "repository": {
     "type": "git",

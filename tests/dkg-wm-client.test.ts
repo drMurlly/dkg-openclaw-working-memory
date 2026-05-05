@@ -257,22 +257,23 @@ describe('querySparql', () => {
     const mockFn = mockFetch([{ ok: true, status: 200, body: { results: [] } }]);
     vi.stubGlobal('fetch', mockFn);
 
-    await makeClient().querySparql('SELECT * WHERE { ?s ?p ?o }', {
+    await makeClient({ agentAddress: '0xtest' }).querySparql('SELECT * WHERE { ?s ?p ?o }', {
       contextGraphId: 'wm-artifacts',
       view: 'working-memory',
     });
 
     const [url, init] = mockFn.mock.calls[0] as [string, RequestInit];
     expect(url).toContain('/api/query');
-    const body = JSON.parse(init.body as string) as { sparql: string; view: string; contextGraphId: string };
+    const body = JSON.parse(init.body as string) as { sparql: string; view: string; contextGraphId: string; agentAddress: string };
     expect(body.sparql).toContain('SELECT');
     expect(body.view).toBe('working-memory');
     expect(body.contextGraphId).toBe('wm-artifacts');
+    expect(body.agentAddress).toBe('0xtest');
   });
 
   it('defaults to view=working-memory when not specified', async () => {
     vi.stubGlobal('fetch', mockFetch([{ ok: true, status: 200, body: {} }]));
-    await makeClient().querySparql('SELECT * WHERE { ?s ?p ?o }');
+    await makeClient({ agentAddress: '0xtest' }).querySparql('SELECT * WHERE { ?s ?p ?o }');
     const [, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string) as { view: string };
     expect(body.view).toBe('working-memory');

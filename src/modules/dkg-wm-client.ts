@@ -39,6 +39,7 @@ interface DkgWmClientOptions {
   timeoutMs?: number;
   maxRetries?: number;
   logger?: OpenClawLogger;
+  agentAddress?: string;
 }
 
 interface CreateAssertionReceipt {
@@ -58,6 +59,7 @@ export class DkgWmClient {
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
   readonly logger?: OpenClawLogger;
+  private agentAddressCache?: string;
 
   constructor(options: DkgWmClientOptions) {
     this.daemonUrl = options.daemonUrl.replace(/\/$/, '');
@@ -65,6 +67,21 @@ export class DkgWmClient {
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.maxRetries = options.maxRetries ?? 3;
     this.logger = options.logger;
+    if (options.agentAddress) this.agentAddressCache = options.agentAddress;
+  }
+
+  async getAgentAddress(): Promise<string | undefined> {
+    if (this.agentAddressCache) return this.agentAddressCache;
+    try {
+      const identity = await this.requestWithRetry<{ agentAddress?: string }>('GET', '/api/agent/identity');
+      if (identity?.agentAddress) {
+        this.agentAddressCache = identity.agentAddress;
+        return this.agentAddressCache;
+      }
+    } catch {
+      // non-fatal — queries still work without agentAddress on some node versions
+    }
+    return undefined;
   }
 
   private headers(): Record<string, string> {
@@ -267,11 +284,13 @@ export class DkgWmClient {
       assertionName?: string;
     },
   ): Promise<unknown> {
+    const agentAddress = await this.getAgentAddress();
     return this.requestWithRetry<unknown>('POST', '/api/query', {
       sparql,
       view: opts?.view ?? 'working-memory',
       contextGraphId: opts?.contextGraphId,
       assertionName: opts?.assertionName,
+      ...(agentAddress ? { agentAddress } : {}),
     });
   }
 

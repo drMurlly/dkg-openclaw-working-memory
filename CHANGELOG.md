@@ -7,6 +7,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.0.4] - 2026-05-05
+
+### Fixed
+
+- **SPARQL queries now return results:** `querySparql` (used by `search_working_memory` tool) now automatically resolves the caller's `agentAddress` via `GET /api/agent/identity` and includes it in the request body. The DKG v10 `/api/query` endpoint requires this field to scope results to the calling agent's working memory — without it all SPARQL SELECT queries returned empty bindings.
+- **`agentAddress` constructor option:** `DkgWmClient` now accepts an optional `agentAddress` parameter that pre-seeds the cache, avoiding the extra identity round-trip (used in tests and when the address is already known).
+
+---
+
 ## [1.0.3] - 2026-05-05
 
 ### Fixed

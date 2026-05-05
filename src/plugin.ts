@@ -83,6 +83,9 @@ export class DkgOpenClawWorkingMemoryPlugin {
       logger: api.logger,
     });
 
+    // Non-blocking: resolve agentAddress once so querySparql doesn't need extra round-trips
+    this.client.getAgentAddress().catch(() => undefined);
+
     // Non-blocking: pre-create the context graph so the first write is faster
     this.client.ensureContextGraph(this.config.contextGraph, 'WM Artifacts').catch((err: unknown) => {
       this.logger?.warn?.(

@@ -24,7 +24,8 @@ function makeClientAndTool() {
     text: async () => JSON.stringify({ results: [] }),
   });
   vi.stubGlobal('fetch', mockFn);
-  const client = new DkgWmClient({ daemonUrl: config.daemonUrl, token: 'test' });
+  // Pre-seed agentAddress so querySparql does not make an extra /api/agent/identity call in tests
+  const client = new DkgWmClient({ daemonUrl: config.daemonUrl, token: 'test', agentAddress: '0xtest' });
   const tool = createSearchTool({ client, config });
   return { tool, mockFn };
 }
