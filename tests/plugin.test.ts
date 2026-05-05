@@ -80,16 +80,20 @@ describe('DkgOpenClawWorkingMemoryPlugin.register()', () => {
     expect(api.logger.error as ReturnType<typeof vi.fn>).toHaveBeenCalled();
   });
 
-  it('logs error and skips tool registration when DKG node is unavailable (non-retried error)', async () => {
-    // 500 throws DkgApiError (not DkgUnavailableError), so no retry occurs — test stays fast
+  it('registers tools even when DKG node is unavailable on startup (graceful degradation)', async () => {
+    // register() is synchronous — tools are registered immediately.
+    // The context graph pre-creation runs in background; if it fails, a warn is logged
+    // and tools remain available (they will return {success:false} if DKG is still down).
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: false, status: 500,
       text: async () => 'Internal Server Error',
     }));
     const api = makeApi();
-    await new DkgOpenClawWorkingMemoryPlugin().register(api);
-    expect(api.registerTool as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
-    expect(api.logger.error as ReturnType<typeof vi.fn>).toHaveBeenCalled();
+    new DkgOpenClawWorkingMemoryPlugin().register(api);
+    expect((api.registerTool as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(4);
+    // Flush one microtask tick so the background ensureContextGraph warn fires
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(api.logger.warn as ReturnType<typeof vi.fn>).toHaveBeenCalled();
   });
 
   it('registers exactly 4 tools in full mode', async () => {
@@ -140,7 +144,7 @@ describe('DkgOpenClawWorkingMemoryPlugin.register()', () => {
     mockSuccessfulNode();
     const api = makeApi({ runtime: undefined as unknown as OpenClawPluginApi['runtime'] });
     // Should not throw — falls back to os.tmpdir()
-    await expect(new DkgOpenClawWorkingMemoryPlugin().register(api)).resolves.toBeUndefined();
+    expect(() => new DkgOpenClawWorkingMemoryPlugin().register(api)).not.toThrow();
     expect(api.registerTool as ReturnType<typeof vi.fn>).toHaveBeenCalled();
   });
 

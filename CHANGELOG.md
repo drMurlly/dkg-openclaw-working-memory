@@ -7,6 +7,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.0.2] - 2026-05-05
+
+### Fixed
+
+- **OpenClaw plugin discovery:** Added `"openclaw": { "extensions": ["./dist/index.js"] }` to `package.json` so `openclaw plugins install` can discover and load the extension entry point correctly.
+
+---
+
 ## [1.0.1] - 2026-05-04
 
 ### Fixed
@@ -91,5 +99,6 @@ All tool handlers return `{success: false, message: ...}` on DKG errors — they
 
 ---
 
+[1.0.2]: https://github.com/drMurlly/dkg-openclaw-working-memory/releases/tag/v1.0.2
 [1.0.1]: https://github.com/drMurlly/dkg-openclaw-working-memory/releases/tag/v1.0.1
 [1.0.0]: https://github.com/drMurlly/dkg-openclaw-working-memory/releases/tag/v1.0.0

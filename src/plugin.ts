@@ -20,7 +20,11 @@ export class DkgOpenClawWorkingMemoryPlugin {
   private config!: ReturnType<typeof loadConfig>;
   private logger?: OpenClawLogger;
 
-  async register(api: OpenClawPluginApi): Promise<void> {
+  // Arrow function field: OpenClaw extracts `plugin.register` and calls it without
+  // a receiver, so we capture `this` lexically to avoid "Cannot set properties of
+  // undefined" errors. OpenClaw also ignores the returned Promise when register is
+  // async, so this is intentionally synchronous — async work is fired in background.
+  register = (api: OpenClawPluginApi): void => {
     if (api.registrationMode !== 'full') return;
 
     this.logger = api.logger;
@@ -38,7 +42,12 @@ export class DkgOpenClawWorkingMemoryPlugin {
     this.config.stateDir = stateDir;
 
     this.dedupe = new DedupeStore({ stateDir });
-    await this.dedupe.load();
+    // Non-blocking: load persisted dedupe index from disk in background
+    this.dedupe.load().catch((err: unknown) => {
+      this.logger?.warn?.(
+        `[dkg-wm] Failed to load dedupe store: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
 
     let token: string;
     try {
@@ -56,15 +65,13 @@ export class DkgOpenClawWorkingMemoryPlugin {
       logger: api.logger,
     });
 
-    try {
-      await this.client.ensureContextGraph(this.config.contextGraph, 'WM Artifacts');
-    } catch (err: unknown) {
-      api.logger.error(
-        `dkg-openclaw-working-memory: could not connect to DKG node — ` +
+    // Non-blocking: pre-create the context graph so the first write is faster
+    this.client.ensureContextGraph(this.config.contextGraph, 'WM Artifacts').catch((err: unknown) => {
+      this.logger?.warn?.(
+        `[dkg-wm] Could not pre-create context graph on startup — ` +
         `${err instanceof Error ? err.message : String(err)}`,
       );
-      return;
-    }
+    });
 
     api.registerTool(
       createDepositTool({ client: this.client, dedupe: this.dedupe, config: this.config }),
@@ -82,15 +89,15 @@ export class DkgOpenClawWorkingMemoryPlugin {
     if (this.config.capture.autoCapture) {
       api.on('agent_end', (event) => {
         this.handleAgentEnd(event as { messageText?: string; sessionId?: string; conversationId?: string })
-          .catch(err => {
+          .catch((err: unknown) => {
             this.logger?.warn?.(
               `[dkg-wm] agent_end capture error: ${err instanceof Error ? err.message : String(err)}`,
             );
           });
       });
       api.on('before_compaction', (event) => {
-        this.handleBeforeCompaction(event as { contextSnapshot?: { messages?: Array<{ role: string; text: string }> } })
-          .catch(err => {
+        this.handleBeforeCompaction(event as { contextSnapshot?: { messages?: unknown } })
+          .catch((err: unknown) => {
             this.logger?.warn?.(
               `[dkg-wm] before_compaction capture error: ${err instanceof Error ? err.message : String(err)}`,
             );
@@ -99,7 +106,7 @@ export class DkgOpenClawWorkingMemoryPlugin {
     }
 
     api.logger.info('dkg-openclaw-working-memory: plugin registered');
-  }
+  };
 
   private async handleAgentEnd(event: {
     messageText?: string;

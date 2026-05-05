@@ -1,0 +1,41 @@
+{
+  "id": "dkg-openclaw-working-memory",
+  "contracts": {
+    "tools": [
+      "deposit_artifact_to_working_memory",
+      "search_working_memory",
+      "update_artifact_status",
+      "promote_artifact_to_shared_memory"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {
+      "dkg": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "nodeUrl": { "type": "string" },
+          "authTokenPath": { "type": "string" }
+        }
+      },
+      "capture": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "autoCapture": { "type": "boolean" },
+          "minContentLength": { "type": "number" },
+          "skipPatterns": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "contextGraph": { "type": "string" },
+      "assertionName": { "type": "string" },
+      "authorId": { "type": "string" },
+      "agentId": { "type": "string" }
+    }
+  }
+}
