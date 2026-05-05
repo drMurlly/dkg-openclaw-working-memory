@@ -17,11 +17,13 @@ const config: PluginConfig = {
   stateDir: '/tmp/test',
 };
 
-function makeClientAndTool() {
+function makeClientAndTool(bindingsOverride?: Array<Record<string, unknown>>) {
+  const bindings = bindingsOverride ?? [];
   const mockFn = vi.fn().mockResolvedValue({
     ok: true,
     status: 200,
-    text: async () => JSON.stringify({ results: [] }),
+    // Realistic DKG SPARQL response shape: { result: { bindings: [...] }, phases: {...} }
+    text: async () => JSON.stringify({ result: { bindings }, phases: { execute: 1, serverTotal: 1 } }),
   });
   vi.stubGlobal('fetch', mockFn);
   // Pre-seed agentAddress so querySparql does not make an extra /api/agent/identity call in tests
@@ -188,6 +190,67 @@ describe('search-tool', () => {
       const [, init] = mockFn.mock.calls[0] as [string, RequestInit];
       const body = JSON.parse(init.body as string) as { sparql: string };
       expect(body.sparql).not.toContain('GRAPH');
+    });
+  });
+
+  describe('response parsing', () => {
+    it('returns count and artifacts array at top level', async () => {
+      const bindings = [
+        { id: 'urn:dkg:wm:abc', name: '"My Note"', type: '"research_note"', status: '"draft"', contentHash: '"sha256:abc"', capturedAt: '"2026-01-01T00:00:00.000Z"' },
+      ];
+      const { tool } = makeClientAndTool(bindings);
+      const result = await tool.handler({ query: 'note' }) as Record<string, unknown>;
+      expect(result['success']).toBe(true);
+      expect(result['count']).toBe(1);
+      expect(Array.isArray(result['artifacts'])).toBe(true);
+      expect((result['artifacts'] as unknown[]).length).toBe(1);
+    });
+
+    it('strips surrounding double-quotes from N-Quads literal values', async () => {
+      const bindings = [
+        { id: 'urn:dkg:wm:abc', name: '"My Research Note"', type: '"research_note"', status: '"validated"', contentHash: '"sha256:abc"', capturedAt: '"2026-01-01T00:00:00.000Z"' },
+      ];
+      const { tool } = makeClientAndTool(bindings);
+      const result = await tool.handler({ query: 'test' }) as Record<string, unknown>;
+      const arts = result['artifacts'] as Array<Record<string, string>>;
+      expect(arts[0]!['status']).toBe('validated');
+      expect(arts[0]!['name']).toBe('My Research Note');
+      expect(arts[0]!['type']).toBe('research_note');
+      expect(arts[0]!['contentHash']).toBe('sha256:abc');
+    });
+
+    it('deduplicates by artifact id — keeps highest-priority status', async () => {
+      // Same artifact appears twice: once as "draft", once as "validated" (after status update)
+      const bindings = [
+        { id: 'urn:dkg:wm:abc', name: '"Note"', type: '"chat"', status: '"validated"', contentHash: '"sha256:abc"', capturedAt: '"2026-01-01T00:00:00.000Z"' },
+        { id: 'urn:dkg:wm:abc', name: '"Note"', type: '"chat"', status: '"draft"', contentHash: '"sha256:abc"', capturedAt: '"2026-01-01T00:00:00.000Z"' },
+      ];
+      const { tool } = makeClientAndTool(bindings);
+      const result = await tool.handler({ query: 'test' }) as Record<string, unknown>;
+      const arts = result['artifacts'] as Array<Record<string, string>>;
+      expect(arts.length).toBe(1);
+      expect(arts[0]!['status']).toBe('validated');
+      expect(result['count']).toBe(1);
+    });
+
+    it('returns count 0 and empty artifacts when no bindings', async () => {
+      const { tool } = makeClientAndTool([]);
+      const result = await tool.handler({ query: 'nothing' }) as Record<string, unknown>;
+      expect(result['success']).toBe(true);
+      expect(result['count']).toBe(0);
+      expect(result['artifacts']).toEqual([]);
+      expect(typeof result['message']).toBe('string');
+    });
+
+    it('preserves multiple distinct artifacts without deduplication', async () => {
+      const bindings = [
+        { id: 'urn:dkg:wm:aaa', name: '"Note A"', type: '"chat"', status: '"draft"', contentHash: '"sha256:aaa"', capturedAt: '"2026-01-01T00:00:00.000Z"' },
+        { id: 'urn:dkg:wm:bbb', name: '"Note B"', type: '"research_note"', status: '"validated"', contentHash: '"sha256:bbb"', capturedAt: '"2026-01-02T00:00:00.000Z"' },
+      ];
+      const { tool } = makeClientAndTool(bindings);
+      const result = await tool.handler({ query: 'note' }) as Record<string, unknown>;
+      expect(result['count']).toBe(2);
+      expect((result['artifacts'] as unknown[]).length).toBe(2);
     });
   });
 });

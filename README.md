@@ -201,7 +201,7 @@ Agent calls `promote_artifact_to_shared_memory(artifactId, confirm=true)` — tr
 ## Running tests
 
 ```bash
-# Unit tests + mocked integration tests (216 tests)
+# Unit tests + mocked integration tests (221 tests)
 npm test
 
 # With coverage report
@@ -214,7 +214,7 @@ DKG_INTEGRATION_TEST=1 npm run test:live
 npm run test:watch
 ```
 
-Current test status: **221 tests total** (216 unit/integration + 5 live), **98.62% statement coverage**, **100% function coverage**.
+Current test status: **226 tests total** (221 unit/integration + 5 live), **98.66% statement coverage**, **100% function coverage**.
 
 ---
 

@@ -7,6 +7,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.0.5] - 2026-05-05
+
+### Fixed
+
+- **`search_working_memory` response format:** The tool now returns a clean `{count, artifacts}` shape instead of the raw DKG SPARQL response object. Each artifact has `id`, `name`, `type`, `status`, `contentHash`, and `capturedAt` at the top level — directly usable by the agent without navigating nested `result.bindings`.
+- **N-Quads literal values stripped from search results:** The DKG SPARQL endpoint returns binding values in N-Quads serialization (e.g. `"validated"` with surrounding double-quotes). The search handler now strips these quotes so values are plain strings (e.g. `validated`).
+- **Duplicate artifact entries in search results:** `update_artifact_status` writes new `wm:status` quads but the DKG assertion is append-only, so both old and new status values remain in the store. The search tool now deduplicates by artifact ID, keeping the highest-trust status (`draft < review_needed < needs_sources < validated < ready_to_share`).
+
+### Changed
+
+- **226 tests total** (221 unit/integration + 5 live), up from 221 at v1.0.4. Five new tests cover search result parsing, N-Quads unquoting, and deduplication logic.
+- **98.66% statement coverage**, **100% function coverage**.
+
+---
+
 ## [1.0.4] - 2026-05-05
 
 ### Fixed
@@ -123,6 +138,7 @@ All tool handlers return `{success: false, message: ...}` on DKG errors — they
 
 ---
 
+[1.0.5]: https://github.com/drMurlly/dkg-openclaw-working-memory/releases/tag/v1.0.5
 [1.0.4]: https://github.com/drMurlly/dkg-openclaw-working-memory/releases/tag/v1.0.4
 [1.0.3]: https://github.com/drMurlly/dkg-openclaw-working-memory/releases/tag/v1.0.3
 [1.0.2]: https://github.com/drMurlly/dkg-openclaw-working-memory/releases/tag/v1.0.2

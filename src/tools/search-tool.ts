@@ -3,6 +3,23 @@ import type { PluginConfig } from '../types/artifact.js';
 import { ARTIFACT_STATUSES, ARTIFACT_TYPES } from '../types/artifact.js';
 import type { DkgWmClient } from '../modules/dkg-wm-client.js';
 
+/**
+ * Strip surrounding double-quotes from RDF N-Quads literal values returned by the DKG API.
+ * The DKG SPARQL endpoint returns binding values in N-Quads serialization form:
+ * the actual literal `validated` comes back as the string `"validated"`.
+ */
+function stripLit(v: unknown): string {
+  if (typeof v !== 'string') return String(v ?? '');
+  return v.replace(/^"(.*)"$/, '$1');
+}
+
+/** Priority order for deduplication: keep the highest-trust status when the same
+ *  artifact appears with multiple status values (because DKG writes are append-only). */
+const STATUS_PRIORITY: Record<string, number> = {
+  draft: 0, review_needed: 1, needs_sources: 2,
+  validated: 3, ready_to_share: 4, deprecated: 5, discarded: 6,
+};
+
 interface SearchArgs {
   query: string;
   status?: string;
@@ -123,11 +140,41 @@ export function createSearchTool(options: {
           view: 'working-memory',
         });
 
+        // DKG returns bindings in N-Quads serialization form (values wrapped in `"..."`)
+        const raw = results as Record<string, unknown>;
+        const bindings = ((raw?.['result'] as Record<string, unknown>)?.['bindings'] as Array<Record<string, unknown>>) ?? [];
+
+        // Deduplicate by artifact id — DKG assertion writes are append-only, so
+        // update_artifact_status leaves both the old and new status quads in the store.
+        // Keep the highest-trust status for each artifact.
+        const byId = new Map<string, Record<string, string>>();
+        for (const b of bindings) {
+          const id = stripLit(b['id']);
+          const status = stripLit(b['status']);
+          const existing = byId.get(id);
+          const prevPri = existing ? (STATUS_PRIORITY[existing['status'] ?? ''] ?? -1) : -1;
+          const curPri = STATUS_PRIORITY[status] ?? -1;
+          if (!existing || curPri >= prevPri) {
+            byId.set(id, {
+              id,
+              name: stripLit(b['name']),
+              type: stripLit(b['type']),
+              status,
+              contentHash: stripLit(b['contentHash']),
+              capturedAt: stripLit(b['capturedAt']),
+            });
+          }
+        }
+
+        const artifacts = Array.from(byId.values());
         return {
           success: true,
           query,
-          results,
-          message: 'Working Memory search complete.',
+          count: artifacts.length,
+          artifacts,
+          message: artifacts.length > 0
+            ? `Found ${artifacts.length} artifact(s) in Working Memory.`
+            : 'No matching artifacts found in Working Memory.',
         };
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
