@@ -7,6 +7,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.0.3] - 2026-05-05
+
+### Fixed
+
+- **Real OpenClaw `agent_end` event structure:** Handler now reads `event.messages[]` (array of `{role, content}` objects) to find the last assistant message, instead of the non-existent `event.messageText` field. Handles both string content and block-array content (`[{type:'text', text:'...'}]`).
+- **Real OpenClaw `before_compaction` event structure:** Handler now reads `event.messages[]` directly; gracefully handles metric-only variant (no `messages` property). Previously checked `event.contextSnapshot?.messages` which does not exist.
+- **Synchronous `register()`:** Plugin `register()` is now a synchronous arrow-function field. All async ops (dedupe load, context graph pre-creation) fire in background with `.catch()`. Fixes "plugin register returned a promise; async registration is ignored" log from OpenClaw gateway — previously all tool/hook registrations were never executed because they appeared after the first `await`.
+- **`this` binding in `register()`:** Arrow-function field captures `this` lexically — safe when OpenClaw extracts the method without binding (`def.register(api)`).
+
+---
+
 ## [1.0.2] - 2026-05-05
 
 ### Fixed

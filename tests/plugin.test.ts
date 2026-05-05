@@ -283,23 +283,31 @@ describe('agent_end event hook', () => {
     return { handler: calls.find(c => c[0] === 'agent_end')![1], api, plugin };
   }
 
-  it('skips when messageText is absent', async () => {
+  it('skips when messages array is absent', async () => {
     const { handler } = await getAgentEndHandler();
     const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
     const before = fetchMock.mock.calls.length;
-    await handler({});
+    await handler({ success: true });
     expect(fetchMock.mock.calls.length).toBe(before);
   });
 
-  it('skips when messageText is shorter than minContentLength', async () => {
+  it('skips when success is false', async () => {
     const { handler } = await getAgentEndHandler();
     const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
     const before = fetchMock.mock.calls.length;
-    await handler({ messageText: 'too short' });
+    await handler({ success: false, messages: [{ role: 'assistant', content: 'This content is long enough to pass minContentLength but the turn failed.' }] });
     expect(fetchMock.mock.calls.length).toBe(before);
   });
 
-  it('captures when messageText is long enough, passing sessionId and conversationId', async () => {
+  it('skips when last assistant message is shorter than minContentLength', async () => {
+    const { handler } = await getAgentEndHandler();
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    const before = fetchMock.mock.calls.length;
+    await handler({ success: true, messages: [{ role: 'assistant', content: 'too short' }] });
+    expect(fetchMock.mock.calls.length).toBe(before);
+  });
+
+  it('captures the last assistant message when it is long enough', async () => {
     mockSuccessfulNode([
       { body: { assertionUri: 'ual:agent-end-test' } },
       { body: { written: 20 } },
@@ -315,9 +323,37 @@ describe('agent_end event hook', () => {
     const before = fetchMock.mock.calls.length;
 
     await handler({
-      messageText: 'This is a sufficiently long agent message that must be captured. It contains research findings about reentrancy vulnerabilities in smart contracts.',
-      sessionId: 'sess-abc',
-      conversationId: 'conv-xyz',
+      success: true,
+      messages: [
+        { role: 'user', content: 'What is reentrancy?' },
+        { role: 'assistant', content: 'This is a sufficiently long agent message that must be captured. It contains research findings about reentrancy vulnerabilities in smart contracts.' },
+      ],
+    });
+
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(before);
+  });
+
+  it('handles block-array content format', async () => {
+    mockSuccessfulNode([
+      { body: { assertionUri: 'ual:block-test' } },
+      { body: { written: 20 } },
+    ]);
+    const api = makeApi();
+    const plugin = new DkgOpenClawWorkingMemoryPlugin();
+    await plugin.register(api);
+
+    const calls = (api.on as ReturnType<typeof vi.fn>).mock.calls as [string, (e: unknown) => void][];
+    const handler = calls.find(c => c[0] === 'agent_end')![1];
+
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    const before = fetchMock.mock.calls.length;
+
+    await handler({
+      success: true,
+      messages: [{
+        role: 'assistant',
+        content: [{ type: 'text', text: 'This is a sufficiently long agent message in block format that must be captured and deposited into DKG Working Memory as a structured artifact.' }],
+      }],
     });
 
     expect(fetchMock.mock.calls.length).toBeGreaterThan(before);
@@ -337,7 +373,8 @@ describe('agent_end event hook', () => {
 
     // handler returns void (not a Promise) — just verify no synchronous throw
     handler({
-      messageText: 'This content is long enough to exceed the minimum content length requirement and will fail due to a network error on the DKG assertion call.',
+      success: true,
+      messages: [{ role: 'assistant', content: 'This content is long enough to exceed the minimum content length requirement and will fail due to a network error on the DKG assertion call.' }],
     });
     // Flush microtasks so the async chain (capture + error swallowing) can complete
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -373,12 +410,10 @@ describe('before_compaction event hook', () => {
     const before = fetchMock.mock.calls.length;
 
     await handler({
-      contextSnapshot: {
-        messages: [
-          { role: 'user', text: 'User question that should never be captured even though it is very long in words.' },
-          { role: 'assistant', text: 'This is a very detailed assistant response that exceeds the minimum content length and should therefore be captured as a summary artifact in working memory.' },
-        ],
-      },
+      messages: [
+        { role: 'user', content: 'User question that should never be captured even though it is very long in words.' },
+        { role: 'assistant', content: 'This is a very detailed assistant response that exceeds the minimum content length and should therefore be captured as a summary artifact in working memory.' },
+      ],
     });
 
     expect(fetchMock.mock.calls.length).toBeGreaterThan(before);
@@ -390,19 +425,17 @@ describe('before_compaction event hook', () => {
     const before = fetchMock.mock.calls.length;
 
     await handler({
-      contextSnapshot: {
-        messages: [
-          { role: 'user', text: 'A very long user message that should be completely ignored by the before_compaction handler because it is not from the assistant.' },
-        ],
-      },
+      messages: [
+        { role: 'user', content: 'A very long user message that should be completely ignored by the before_compaction handler because it is not from the assistant.' },
+      ],
     });
 
     expect(fetchMock.mock.calls.length).toBe(before);
   });
 
-  it('handles absent contextSnapshot gracefully', async () => {
+  it('handles absent messages gracefully (metric-only variant of event)', async () => {
     const { handler } = await getCompactionHandler();
-    expect(() => handler({})).not.toThrow();
+    expect(() => handler({ messageCount: 42, tokenCount: 8000 })).not.toThrow();
   });
 
   it('skips assistant messages shorter than minContentLength', async () => {
@@ -410,7 +443,7 @@ describe('before_compaction event hook', () => {
     const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
     const before = fetchMock.mock.calls.length;
     await handler({
-      contextSnapshot: { messages: [{ role: 'assistant', text: 'short reply' }] },
+      messages: [{ role: 'assistant', content: 'short reply' }],
     });
     expect(fetchMock.mock.calls.length).toBe(before);
   });
@@ -418,21 +451,19 @@ describe('before_compaction event hook', () => {
   it('handles non-array messages value gracefully', async () => {
     const { handler } = await getCompactionHandler();
     // messages is a string instead of an array — must not throw
-    expect(() => handler({ contextSnapshot: { messages: 'not-an-array' } })).not.toThrow();
+    expect(() => handler({ messages: 'not-an-array' })).not.toThrow();
   });
 
-  it('skips message objects missing role or text fields', async () => {
+  it('skips message objects missing role or content fields', async () => {
     const { handler } = await getCompactionHandler();
     const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
     const before = fetchMock.mock.calls.length;
     await handler({
-      contextSnapshot: {
-        messages: [
-          { role: 'assistant' },           // no text field
-          { text: 'some text' },           // no role field
-          null,                            // null entry
-        ],
-      },
+      messages: [
+        { role: 'assistant' },           // no content field
+        { content: 'some text' },        // no role field
+        null,                            // null entry
+      ],
     });
     expect(fetchMock.mock.calls.length).toBe(before);
   });

@@ -14,6 +14,24 @@ import {
   createSearchTool,
 } from './tools/index.js';
 
+/** Extracts plain text from message content (string or block array). */
+function extractText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter(b => b && typeof b === 'object' && 'type' in (b as object) && (b as {type: string}).type === 'text' && 'text' in (b as object))
+      .map(b => (b as {text: string}).text)
+      .join('\n');
+  }
+  return '';
+}
+
+interface AgentMessage {
+  role?: string;
+  content?: unknown;
+  text?: string; // legacy field used in some test contexts
+}
+
 export class DkgOpenClawWorkingMemoryPlugin {
   private client!: DkgWmClient;
   private dedupe!: DedupeStore;
@@ -88,20 +106,25 @@ export class DkgOpenClawWorkingMemoryPlugin {
 
     if (this.config.capture.autoCapture) {
       api.on('agent_end', (event) => {
-        this.handleAgentEnd(event as { messageText?: string; sessionId?: string; conversationId?: string })
-          .catch((err: unknown) => {
-            this.logger?.warn?.(
-              `[dkg-wm] agent_end capture error: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          });
+        this.handleAgentEnd(event as {
+          messages?: AgentMessage[];
+          success?: boolean;
+        }).catch((err: unknown) => {
+          this.logger?.warn?.(
+            `[dkg-wm] agent_end capture error: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
       });
       api.on('before_compaction', (event) => {
-        this.handleBeforeCompaction(event as { contextSnapshot?: { messages?: unknown } })
-          .catch((err: unknown) => {
-            this.logger?.warn?.(
-              `[dkg-wm] before_compaction capture error: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          });
+        this.handleBeforeCompaction(event as {
+          messages?: AgentMessage[];
+          messageCount?: number;
+          tokenCount?: number;
+        }).catch((err: unknown) => {
+          this.logger?.warn?.(
+            `[dkg-wm] before_compaction capture error: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
       });
     }
 
@@ -109,33 +132,41 @@ export class DkgOpenClawWorkingMemoryPlugin {
   };
 
   private async handleAgentEnd(event: {
-    messageText?: string;
-    sessionId?: string;
-    conversationId?: string;
+    messages?: AgentMessage[];
+    success?: boolean;
   }): Promise<void> {
-    if (!event.messageText) return;
-    if (event.messageText.length < this.config.capture.minContentLength) return;
+    // Only capture successful turns
+    if (event.success === false) return;
+    const messages = Array.isArray(event.messages) ? event.messages : [];
+
+    // Capture the last assistant message produced in this turn
+    const assistantMsgs = messages.filter(m => m && m.role === 'assistant');
+    const last = assistantMsgs[assistantMsgs.length - 1];
+    if (!last) return;
+
+    const text = extractText(last.content ?? last.text);
+    if (!text || text.length < this.config.capture.minContentLength) return;
 
     await this.capture({
-      content: event.messageText,
+      content: text,
       source: 'chat',
       artifactType: 'chat',
-      sessionId: event.sessionId,
-      conversationId: event.conversationId,
     });
   }
 
   private async handleBeforeCompaction(event: {
-    contextSnapshot?: { messages?: unknown };
+    messages?: AgentMessage[];
+    messageCount?: number;
+    tokenCount?: number;
   }): Promise<void> {
-    const messages = Array.isArray(event.contextSnapshot?.messages)
-      ? event.contextSnapshot.messages
-      : [];
+    // before_compaction may be called without messages (metric-only variant)
+    const messages = Array.isArray(event.messages) ? event.messages : [];
+
     for (const msg of messages) {
       if (!msg || typeof msg !== 'object') continue;
-      const { role, text } = msg as Record<string, unknown>;
-      if (role !== 'assistant') continue;
-      if (typeof text !== 'string' || text.length < this.config.capture.minContentLength) continue;
+      if (msg.role !== 'assistant') continue;
+      const text = extractText(msg.content ?? msg.text);
+      if (!text || text.length < this.config.capture.minContentLength) continue;
       await this.capture({
         content: text,
         source: 'chat',
@@ -175,6 +206,8 @@ export class DkgOpenClawWorkingMemoryPlugin {
       } catch {
         this.logger?.warn?.('[dkg-wm] Auto-capture: failed to persist dedupe index');
       }
+
+      this.logger?.info?.(`[dkg-wm] Artifact captured — UAL: ${artifact.dkg.ual ?? 'pending'}`);
     } catch (err: unknown) {
       // log but don't throw — auto-capture failure must not disrupt the agent
       const msg = err instanceof Error ? err.message : String(err);
