@@ -14,6 +14,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **SPARQL queries now return results:** `querySparql` (used by `search_working_memory` tool) now automatically resolves the caller's `agentAddress` via `GET /api/agent/identity` and includes it in the request body. The DKG v10 `/api/query` endpoint requires this field to scope results to the calling agent's working memory — without it all SPARQL SELECT queries returned empty bindings.
 - **`agentAddress` constructor option:** `DkgWmClient` now accepts an optional `agentAddress` parameter that pre-seeds the cache, avoiding the extra identity round-trip (used in tests and when the address is already known).
 
+### Changed
+
+- **221 tests total** (216 unit/integration + 5 live), up from 219 at v1.0.3.
+- **98.62% statement coverage**, **100% function coverage**.
+
 ---
 
 ## [1.0.3] - 2026-05-05
@@ -107,9 +112,8 @@ All tool handlers return `{success: false, message: ...}` on DKG errors — they
 - Full config loading from `~/.openclaw/openclaw.json` with env var overrides (`DKG_AUTH_TOKEN`, `DKG_DAEMON_URL`, `DKG_WM_CONTEXT_GRAPH`, `DKG_WM_ASSERTION_NAME`, `DKG_WM_AUTHOR_ID`, `DKG_WM_CAPTURE_ENABLED`)
 
 **Testing:**
-- 219 tests total across 13 test files (214 unit/integration pass; 5 live integration tests gated by `DKG_INTEGRATION_TEST=1`)
-- **98.97% statement coverage**, **93.25% branch coverage**, **100% function coverage** (via `@vitest/coverage-v8`)
-- Live integration test suite verified against a real DKG v10 node (`10.0.0-rc.4-dev`)
+- 73 tests across 8 test files — all unit tests at initial release
+- Live integration tests (5) gated by `DKG_INTEGRATION_TEST=1` — verified against a real DKG v10 node (`10.0.0-rc.4-dev`)
 - Mocked E2E integration tests covering full deposit → dedupe → retrieval flow
 
 **CI/CD:**
@@ -119,6 +123,8 @@ All tool handlers return `{success: false, message: ...}` on DKG errors — they
 
 ---
 
+[1.0.4]: https://github.com/drMurlly/dkg-openclaw-working-memory/releases/tag/v1.0.4
+[1.0.3]: https://github.com/drMurlly/dkg-openclaw-working-memory/releases/tag/v1.0.3
 [1.0.2]: https://github.com/drMurlly/dkg-openclaw-working-memory/releases/tag/v1.0.2
 [1.0.1]: https://github.com/drMurlly/dkg-openclaw-working-memory/releases/tag/v1.0.1
 [1.0.0]: https://github.com/drMurlly/dkg-openclaw-working-memory/releases/tag/v1.0.0
